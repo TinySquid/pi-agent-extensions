@@ -2,7 +2,7 @@
  * Memory extension - persistent project memory across sessions
  *
  * On session start: reads MEMORY.md from project root and injects into system prompt.
- * /remember: summarizes current session into MEMORY.md with smart merge.
+ * /remember: summarizes current session with caveman into MEMORY.md with smart merge.
  *
  * MEMORY.md sections: Decisions, Preferences, Lessons
  * Output format: caveman full intensity (ultra-terse)
@@ -347,11 +347,10 @@ export default function (pi: ExtensionAPI) {
 
       // --- Extraction ---
       const extractPrompt = [
-        "Extract key decisions, preferences, and lessons from this session.",
+        "Extract key decisions (not implementation details), preferences, and lessons from this session.",
         "Output ONLY new info not already in existing memory.",
         "For entries that update/replace existing ones, prefix with [update].",
-        "Use exactly these sections: ## Decisions, ## Preferences, ## Lessons.",
-        "If section has nothing new: ## SectionName then _none_ on next line.",
+        "Use exactly the sections format: ## Decisions, ## Preferences, ## Lessons.",
         "",
         CAVEMAN_RULES,
         "",

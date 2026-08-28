@@ -5,6 +5,9 @@
   "type": "module",
   "license": "MIT",
   "author": "TinySquid",
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "pi-package",
     "pi-agent",

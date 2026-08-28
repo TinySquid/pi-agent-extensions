@@ -41,23 +41,38 @@ Report what was and wasn't tested.
 
 ## Release process
 
-⚠️ **The user has final approval. NEVER run `pnpm publish` (or any publish command) without explicit approval in the conversation — the user manually tests every release candidate first, because errors surface only at runtime.**
+A release is a PR that bumps the version of one or more extension packages. **The user's PR merge is the publish approval: CI publishes to npm automatically on merge.**
 
-1. Bump `version` in `<name>/package.json` (semver, versions are independent per extension)
+1. Bump `version` in each changed `<name>/package.json` (semver, independent per extension). Only bump packages with actual changes.
 2. `pnpm run check`
-3. User manually tests and explicitly approves (or denies) the release
-4. On approval: `pnpm publish --filter <name> --dry-run` first, then `pnpm publish --filter <name>`
-5. Update the root README index if the extension is new
+3. The user manually tests the candidate and explicitly approves the release in conversation
+4. Push the branch and open a PR (see Git workflow)
+5. The user merges → GitHub Actions runs the checks and `pnpm publish -r`. Packages whose version already exists on npm are skipped.
 
-First-time publishing requires a one-time `npm login` (writes `~/.npmrc`; pnpm reads the same auth). Packages are public under the `@tinysquid` scope.
+⚠️ **Never run `pnpm publish` (or any publish command) locally.** Publishing happens only in CI on merge — the merge is the user's final approval. Local publishing is reserved for the user themselves (one-time `npm login` required).
+
+CI requires the `NPM_TOKEN` repo secret (a granular npm automation token) — one-time setup by the user.
 
 ## Adding a new extension
 
-1. Copy `memory/` as a template: `<name>/<name>.ts`, `<name>/README.md`, `<name>/package.json` (name `@tinysquid/pi-<name>`, version `0.1.0`)
+1. Copy `memory/` as a template: `<name>/<name>.ts`, `<name>/README.md`, `<name>/package.json` (name `@tinysquid/pi-<name>`, version `0.1.0`, `"publishConfig": { "access": "public" }` — scoped packages default to private without it)
 2. Add the dir to `pnpm-workspace.yaml`
 3. Add it to the extension index in the root `README.md`
 4. `pnpm install && pnpm run check`
 
-## Repo workflow
+## Git workflow
 
-No issue tracker: work happens on a branch and ships as a GitHub PR.
+No issue tracker: work happens on a feature branch and ships as a GitHub PR.
+
+1. Create a branch per change: `git checkout -b <type>/<name>` (e.g. `feat/memory-limit`, `chore/dev-boilerplate`)
+2. Run `pnpm run check` before every commit
+3. Push the branch and open the PR with the GitHub CLI — never ask the user to do it:
+
+   ```bash
+   git push -u origin <branch>
+   gh pr create --base main --title "..." --body "..."
+   ```
+
+   The PR body states what was tested and what wasn't.
+
+4. The user reviews and merges. For release PRs, merging is the publish approval (see Release process).
