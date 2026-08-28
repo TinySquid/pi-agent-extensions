@@ -49,9 +49,18 @@ A release is a PR that bumps the version of one or more extension packages. **Th
 4. Push the branch and open a PR (see Git workflow)
 5. The user merges → GitHub Actions runs the checks and `pnpm publish -r`. Packages whose version already exists on npm are skipped.
 
-⚠️ **Never run `pnpm publish` (or any publish command) locally.** Publishing happens only in CI on merge — the merge is the user's final approval. Local publishing is reserved for the user themselves (one-time `npm login` required).
+⚠️ **Never run `pnpm publish` (or any publish command) locally.** Publishing happens only in CI on merge — the merge is the user's final approval. Local publishing is reserved for the user themselves.
 
-CI requires the `NPM_TOKEN` repo secret (a granular npm automation token) — one-time setup by the user.
+### npm trusted publishing
+
+CI authenticates via npm trusted publishing (GitHub Actions OIDC) — no tokens or secrets. One-time setup per package, done by the user:
+
+1. Publish the first version manually: `pnpm publish --filter <name> --no-git-checks` (requires a local `npm login`)
+2. On npmjs.com, open the package page → Access Control → Add Trusted Publisher: GitHub Actions, owner `TinySquid`, repo `pi-agent-extensions`, workflow `.github/workflows/ci.yml`
+
+npm requires the package to exist before a trusted publisher can be attached — hence the manual first publish.
+
+Debugging note: npm returns `404 Not Found` (not 403) for any publish the account isn't allowed to make — unauthenticated, wrong account, unregistered OIDC, or **unverified account email**. If publishes 404 with seemingly valid auth, check the account email verification on npmjs.com first.
 
 ## Adding a new extension
 
@@ -59,6 +68,7 @@ CI requires the `NPM_TOKEN` repo secret (a granular npm automation token) — on
 2. Add the dir to `pnpm-workspace.yaml`
 3. Add it to the extension index in the root `README.md`
 4. `pnpm install && pnpm run check`
+5. The first publish of a new package is manual, plus a trusted-publisher entry on npmjs.com (see Release process)
 
 ## Git workflow
 
