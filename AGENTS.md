@@ -84,6 +84,11 @@ No issue tracker: work happens on a feature branch and ships as a GitHub PR.
    gh pr create --base main --title "..." --body "..."
    ```
 
-   The PR body states what was tested and what wasn't.
+   The PR body starts directly with a plain description of the change — no
+   heading. Below it, only where relevant, add these sections:
+   `## Tested`, `## Not Tested`, `## Before Merging`, `## After Merging`.
+   Drop any section that doesn't apply. Content that fits none of them:
+   propose a new section name in the PR; once the user approves it, use it
+   and add it to the section list here.
 
 4. The user reviews and merges. For release PRs, merging is the publish approval (see Release process).
