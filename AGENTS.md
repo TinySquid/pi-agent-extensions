@@ -60,6 +60,8 @@ CI authenticates via npm trusted publishing (GitHub Actions OIDC) — no tokens 
 
 npm requires the package to exist before a trusted publisher can be attached — hence the manual first publish.
 
+Debugging note: npm returns `404 Not Found` (not 403) for any publish the account isn't allowed to make — unauthenticated, wrong account, unregistered OIDC, or **unverified account email**. If publishes 404 with seemingly valid auth, check the account email verification on npmjs.com first.
+
 ## Adding a new extension
 
 1. Copy `memory/` as a template: `<name>/<name>.ts`, `<name>/README.md`, `<name>/package.json` (name `@tinysquid/pi-<name>`, version `0.1.0`, `"publishConfig": { "access": "public" }` — scoped packages default to private without it)
