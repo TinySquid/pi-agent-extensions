@@ -10,5 +10,11 @@ Persistent project memory across sessions.
 ## Install
 
 ```bash
+pi install npm:@tinysquid/pi-memory
+```
+
+Or for local development:
+
+```bash
 ln -s ~/dev/pi-agent-extensions/memory/memory.ts ~/.pi/agent/extensions/memory.ts
 ```

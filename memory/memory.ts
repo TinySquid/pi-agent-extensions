@@ -8,9 +8,11 @@
  * Output format: caveman full intensity (ultra-terse)
  */
 
-import { complete } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { SessionEntry } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  SessionEntry,
+} from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -98,7 +100,9 @@ function parseSections(content: string): Map<SectionName, string[]> {
     const trimmed = line.trim();
     const match = trimmed.match(/^#{1,3}\s+(.+)$/);
     if (match) {
-      const normalized = SECTIONS.find((s) => s.toLowerCase() === match[1].trim().toLowerCase());
+      const normalized = SECTIONS.find(
+        (s) => s.toLowerCase() === match[1].trim().toLowerCase(),
+      );
       if (normalized) {
         currentSection = normalized;
         continue;
@@ -174,7 +178,7 @@ function isDuplicate(newEntry: string, existingEntries: string[]): boolean {
 
 function smartMerge(
   existing: Map<SectionName, string[]>,
-  incoming: Map<SectionName, string[]>
+  incoming: Map<SectionName, string[]>,
 ): Map<SectionName, string[]> {
   const merged = new Map<SectionName, string[]>();
 
@@ -262,17 +266,12 @@ async function callModel(
   ctx: ExtensionContext,
   systemPrompt: string,
   userMessage: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string> {
   const model = ctx.model;
   if (!model) throw new Error("No model selected");
 
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok || !auth.apiKey) {
-    throw new Error(auth.ok ? `No API key for ${model.provider}/${model.id}` : auth.error);
-  }
-
-  const response = await complete(
+  const response = await ctx.modelRegistry.complete(
     model,
     {
       systemPrompt,
@@ -284,7 +283,7 @@ async function callModel(
         },
       ],
     },
-    { apiKey: auth.apiKey, headers: auth.headers, signal }
+    { signal },
   );
 
   return response.content
@@ -312,14 +311,16 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
     if (!cachedMemory) return;
     return {
-      systemPrompt: event.systemPrompt + `\n\n## MEMORY.md\n\n${cachedMemory}\n`,
+      systemPrompt:
+        event.systemPrompt + `\n\n## MEMORY.md\n\n${cachedMemory}\n`,
     };
   });
 
   // --- /remember command ---
 
   pi.registerCommand("remember", {
-    description: "Summarize session into MEMORY.md (decisions, preferences, lessons)",
+    description:
+      "Summarize session into MEMORY.md (decisions, preferences, lessons)",
     handler: async (_args, ctx) => {
       const root = projectRoot ?? findProjectRoot(ctx.cwd);
       if (!root) {
@@ -367,10 +368,13 @@ export default function (pi: ExtensionAPI) {
           ctx,
           "You extract project memory entries. Ultra-terse. Caveman style. No preamble.",
           extractPrompt,
-          ctx.signal
+          ctx.signal,
         );
       } catch (err) {
-        ctx.ui.notify(`Extraction failed: ${err instanceof Error ? err.message : err}`, "error");
+        ctx.ui.notify(
+          `Extraction failed: ${err instanceof Error ? err.message : err}`,
+          "error",
+        );
         return;
       }
 
@@ -402,12 +406,12 @@ export default function (pi: ExtensionAPI) {
             ctx,
             "You compress project memory. Ultra-terse. Caveman style. No preamble.",
             compressPrompt,
-            ctx.signal
+            ctx.signal,
           );
         } catch (err) {
           ctx.ui.notify(
             `Compression failed, writing uncompressed: ${err instanceof Error ? err.message : err}`,
-            "warning"
+            "warning",
           );
           writeMemoryFile(root, rendered);
           cachedMemory = rendered.trim();
@@ -422,7 +426,7 @@ export default function (pi: ExtensionAPI) {
         if (newLineCount > MAX_LINES) {
           ctx.ui.notify(
             `Warning: MEMORY.md at ${newLineCount} lines after compression (max ${MAX_LINES}). Consider pruning manually.`,
-            "warning"
+            "warning",
           );
         }
       }
@@ -433,7 +437,7 @@ export default function (pi: ExtensionAPI) {
       projectRoot = root;
 
       const finalLines = rendered.split("\n").length;
-      ctx.ui.notify(`Memory updated: ${finalLines} lines`, "success");
+      ctx.ui.notify(`Memory updated: ${finalLines} lines`, "info");
     },
   });
 }

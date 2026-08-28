@@ -1,6 +1,6 @@
 # Pi Agent Extensions
 
-Custom extensions for [Pi Agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent).
+Custom [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) extensions. Each extension is an independently versioned npm package under the `@tinysquid` scope.
 
 ## Extensions
 
@@ -8,12 +8,41 @@ Custom extensions for [Pi Agent](https://github.com/badlogic/pi-mono/tree/main/p
 | ------------------- | ------------------------------------------------------------------- |
 | [memory](./memory/) | Persistent project memory across sessions (MEMORY.md + `/remember`) |
 
-Each extension lives in its own directory, with a README describing what it does.
+## Install
 
-## Installation
-
-Symlink individual extensions into `~/.pi/agent/extensions/`:
+Install an extension into pi:
 
 ```bash
-ln -s ~/dev/pi-agent-extensions/<name>/<name>.ts ~/.pi/agent/extensions/<name>.ts
+pi install npm:@tinysquid/pi-memory
 ```
+
+## Development
+
+Requires [pnpm](https://pnpm.io).
+
+```bash
+git clone git@github.com:TinySquid/pi-agent-extensions.git
+cd pi-agent-extensions
+pnpm install
+```
+
+There is no build step — pi loads the `.ts` sources directly. For quick iteration, symlink an extension into your pi extensions dir:
+
+```bash
+ln -s $(pwd)/memory/memory.ts ~/.pi/agent/extensions/memory.ts
+```
+
+Scripts:
+
+| Command              | Purpose                         |
+| -------------------- | ------------------------------- |
+| `pnpm run check`     | Typecheck + lint + format check |
+| `pnpm run typecheck` | `tsc --noEmit` (strict)         |
+| `pnpm run lint`      | ESLint                          |
+| `pnpm run format`    | Prettier (write)                |
+
+See [AGENTS.md](./AGENTS.md) for conventions, the manual testing loop, and the release process.
+
+## License
+
+[MIT](./LICENSE)
