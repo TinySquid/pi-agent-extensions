@@ -8,7 +8,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check"
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format",
+    "ci": "pnpm run typecheck && pnpm run lint && pnpm run format:check"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.84.3",

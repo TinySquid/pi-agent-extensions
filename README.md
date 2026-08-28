@@ -34,12 +34,13 @@ ln -s $(pwd)/memory/memory.ts ~/.pi/agent/extensions/memory.ts
 
 Scripts:
 
-| Command              | Purpose                         |
-| -------------------- | ------------------------------- |
-| `pnpm run check`     | Typecheck + lint + format check |
-| `pnpm run typecheck` | `tsc --noEmit` (strict)         |
-| `pnpm run lint`      | ESLint                          |
-| `pnpm run format`    | Prettier (write)                |
+| Command              | Purpose                                       |
+| -------------------- | --------------------------------------------- |
+| `pnpm run check`     | Typecheck + lint + format (fixes)             |
+| `pnpm run ci`        | Typecheck + lint + format check (verify-only) |
+| `pnpm run typecheck` | `tsc --noEmit` (strict)                       |
+| `pnpm run lint`      | ESLint                                        |
+| `pnpm run format`    | Prettier (write)                              |
 
 See [AGENTS.md](./AGENTS.md) for conventions, the manual testing loop, and the release process.
 
