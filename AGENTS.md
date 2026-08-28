@@ -16,7 +16,8 @@ Package manager is **pnpm** (workspaces). Use pnpm for install, scripts, and pub
 - `pnpm run typecheck` — `tsc --noEmit` (strict)
 - `pnpm run lint` — eslint (typescript-eslint recommended, flat config)
 - `pnpm run format` — prettier (write)
-- `pnpm run check` — all of the above; run before every commit
+- `pnpm run check` — local: typecheck + lint + format (prettier write); run before every commit
+- `pnpm run ci` — verify-only variant used by CI (prettier check, fails on unformatted code)
 
 There is no build step: pi loads the `.ts` sources directly with Bun. There is no test framework for pi extensions — testing is manual (see below).
 
@@ -83,6 +84,11 @@ No issue tracker: work happens on a feature branch and ships as a GitHub PR.
    gh pr create --base main --title "..." --body "..."
    ```
 
-   The PR body states what was tested and what wasn't.
+   The PR body starts directly with a plain description of the change — no
+   heading. Below it, only where relevant, add these sections:
+   `## Tested`, `## Not Tested`, `## Before Merging`, `## After Merging`.
+   Drop any section that doesn't apply. Content that fits none of them:
+   propose a new section name in the PR; once the user approves it, use it
+   and add it to the section list here.
 
 4. The user reviews and merges. For release PRs, merging is the publish approval (see Release process).
