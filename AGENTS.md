@@ -61,8 +61,6 @@ CI authenticates via npm trusted publishing (GitHub Actions OIDC) — no tokens 
 
 npm requires the package to exist before a trusted publisher can be attached — hence the manual first publish.
 
-Debugging note: npm returns `404 Not Found` (not 403) for any publish the account isn't allowed to make — unauthenticated, wrong account, unregistered OIDC, or **unverified account email**. If publishes 404 with seemingly valid auth, check the account email verification on npmjs.com first.
-
 ## Adding a new extension
 
 1. Copy `memory/` as a template: `<name>/<name>.ts`, `<name>/README.md`, `<name>/package.json` (name `@tinysquid/pi-<name>`, version `0.1.0`, `"publishConfig": { "access": "public" }` — scoped packages default to private without it)
@@ -73,7 +71,7 @@ Debugging note: npm returns `404 Not Found` (not 403) for any publish the accoun
 
 ## Git workflow
 
-No issue tracker: work happens on a feature branch and ships as a GitHub PR.
+No issue tracker: **every change — features, fixes, chores, docs tweaks, anything — happens on a branch and ships as a GitHub PR.** Never commit directly to `main`.
 
 1. Create a branch per change: `git checkout -b <type>/<name>` (e.g. `feat/memory-limit`, `chore/dev-boilerplate`)
 2. Run `pnpm run check` before every commit
@@ -84,11 +82,6 @@ No issue tracker: work happens on a feature branch and ships as a GitHub PR.
    gh pr create --base main --title "..." --body "..."
    ```
 
-   The PR body starts directly with a plain description of the change — no
-   heading. Below it, only where relevant, add these sections:
-   `## Tested`, `## Not Tested`, `## Before Merging`, `## After Merging`.
-   Drop any section that doesn't apply. Content that fits none of them:
-   propose a new section name in the PR; once the user approves it, use it
-   and add it to the section list here.
+   The PR body opens with a plain description of the change (no heading), then only the sections that apply: `## Tested`, `## Not Tested`, `## Before Merging`, `## After Merging`. If content fits none of them, propose a new section in the PR and add it to this list once approved.
 
 4. The user reviews and merges. For release PRs, merging is the publish approval (see Release process).
