@@ -30,7 +30,7 @@ const ROOT_MARKERS = [
   "pom.xml",
   "build.gradle",
   "Gemfile",
-  "CmakeLists.txt",
+  "CMakeLists.txt",
 ];
 
 const SECTIONS = ["Decisions", "Preferences", "Lessons"] as const;

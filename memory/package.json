@@ -1,6 +1,6 @@
 {
   "name": "@tinysquid/pi-memory",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Persistent project memory across sessions (MEMORY.md + /remember) for the pi coding agent",
   "type": "module",
   "license": "MIT",
