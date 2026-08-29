@@ -33,6 +33,15 @@ importers:
         specifier: ^8.68.0
         version: 8.68.0(eslint@10.9.1(jiti@2.7.0))(typescript@5.9.3)
 
+  auto-session-name:
+    dependencies:
+      '@earendil-works/pi-ai':
+        specifier: '*'
+        version: 0.84.3(ws@8.21.3)
+      '@earendil-works/pi-coding-agent':
+        specifier: '*'
+        version: 0.84.3(ws@8.21.3)
+
   memory:
     dependencies:
       '@earendil-works/pi-ai':
