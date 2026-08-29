@@ -69,7 +69,9 @@ A release is a PR that bumps the version of one or more extension packages. **Th
 
 No issue tracker: **every change — features, fixes, chores, docs tweaks, anything — happens on a branch and ships as a GitHub PR.** Never commit directly to `main`.
 
-1. Create a branch per change: `git checkout -b <type>/<name>` (e.g. `feat/memory-limit`, `chore/dev-boilerplate`)
+1. Pick the branch:
+   - Brand-new extension: `git checkout -b ext/<extension-name>`
+   - Any other change: check the current branch first (`git branch --show-current`) — the user may have already started a branch for this work. If it's not `main`, use it (ask when unsure). Otherwise create a conventional one: `git checkout -b <type>/<name>` (e.g. `feat/memory-limit`, `chore/dev-boilerplate`)
 2. Run `pnpm run check` before every commit
 3. Push the branch and open the PR with the GitHub CLI — never ask the user to do it:
 
