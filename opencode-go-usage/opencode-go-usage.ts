@@ -409,25 +409,6 @@ function formatCountdownCompact(
   return countdown.replace(/\s+/g, "");
 }
 
-/** Absolute reset time: "2:32 PM" (today), "Mon 2:32 PM" (this week), "Sep 29". */
-function formatResetTime(resetsAt: string | null): string {
-  if (!resetsAt) return "—";
-  const date = new Date(resetsAt);
-  if (Number.isNaN(date.getTime())) return "—";
-  const now = new Date();
-  if (date.toDateString() === now.toDateString()) {
-    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  }
-  if (date.getTime() - now.getTime() <= 7 * 86_400_000) {
-    return date.toLocaleString([], {
-      weekday: "short",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
 /** 42 → "42%", 0.7 → "0.7%", 62.5 → "62.5%". */
 function formatPercent(percent: number): string {
   const rounded = Math.round(percent * 10) / 10;
@@ -440,12 +421,17 @@ function bar(percent: number, width = 10): string {
   return "█".repeat(filled) + "░".repeat(width - filled);
 }
 
-function formatUpdated(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+/** ANSI SGR escape sequence (foreground/background color resets). */
+const ANSI_SGR_RE = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*m`, "g");
+
+/** Visible length of a string after stripping ANSI SGR escape sequences. */
+function visibleLength(text: string): number {
+  return text.replace(ANSI_SGR_RE, "").length;
+}
+
+/** Pad `text` with trailing spaces so its visible width equals `width`. */
+function padVisible(text: string, width: number): string {
+  return text + " ".repeat(Math.max(0, width - visibleLength(text)));
 }
 
 // ---------------------------------------------------------------------------
@@ -597,17 +583,35 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
       return lines;
     }
 
-    lines.push("Window     Usage               Resets in");
-    for (const meter of meters) {
-      const label = PERIOD_LABEL[meter.period].padEnd(11);
-      const percent = formatPercent(meter.percent).padStart(5);
-      const countdown = (formatCountdown(meter.resetsAt) ?? "—").padEnd(8);
-      lines.push(
-        `${label}${bar(meter.percent)}  ${colorPercent(theme, meter.percent, percent)}  ${countdown} ${formatResetTime(meter.resetsAt)}`,
+    const headers = ["Window", "Usage", "Resets in"];
+    const rows = meters.map((meter) => {
+      const label = PERIOD_LABEL[meter.period];
+      const percent = formatPercent(meter.percent);
+      const usage = `${bar(meter.percent)} ${percent}`;
+      const usageColored = `${bar(meter.percent)} ${colorPercent(theme, meter.percent, percent)}`;
+      const resets = formatCountdown(meter.resetsAt) ?? "—";
+      return { label, usage, usageColored, resets };
+    });
+
+    const widths = [
+      Math.max(headers[0].length, ...rows.map((r) => r.label.length)),
+      Math.max(headers[1].length, ...rows.map((r) => r.usage.length)),
+      Math.max(headers[2].length, ...rows.map((r) => r.resets.length)),
+    ];
+    const border = `+${widths.map((w) => "-".repeat(w + 2)).join("+")}+`;
+    const headerCells = headers.map((h, i) => padVisible(h, widths[i]));
+
+    lines.push(border);
+    lines.push(`| ${headerCells.join(" | ")} |`);
+    lines.push(border);
+    for (const row of rows) {
+      const cells = [row.label, row.usageColored, row.resets].map((cell, i) =>
+        padVisible(cell, widths[i]),
       );
+      lines.push(`| ${cells.join(" | ")} |`);
     }
+    lines.push(border);
     if (lastError) lines.push(`Stale — ${lastError}`);
-    if (lastFetchedAt) lines.push(`Updated ${formatUpdated(lastFetchedAt)}`);
     lines.push("/opencode-go close hides this panel");
     return lines;
   }

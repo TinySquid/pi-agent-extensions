@@ -17,7 +17,7 @@ ln -s $(pwd)/opencode-go-usage/opencode-go-usage.ts ~/.pi/agent/extensions/openc
 ## What it does
 
 - Footer status line (via `ctx.ui.setStatus`, joined onto the built-in footer's extension-status line; the footer itself is never replaced): `go 5h 62% · wk 31% · mo 44%`, or with countdowns on: `go 5h 62% (1h12m) · wk 31% (3d4h) · mo 44% (12d0h)`. Percentages are colored: dim below 70%, warning at 70%+, error at 90%+.
-- `/opencode-go` (or `/opencode-go usage`) — force-fetches and shows a table widget above the editor with a usage bar, percentage, reset countdown, and absolute reset time per window, plus the fetch time. `/opencode-go close` hides it.
+- `/opencode-go` (or `/opencode-go usage`) — force-fetches and shows a bordered ASCII table widget above the editor with a usage bar, percentage, and reset countdown per window. `/opencode-go close` hides it.
 - `/opencode-go workspace-id <id|url>` — sets the workspace id. Accepts a bare `wrk_…` id or a full dashboard URL (`https://opencode.ai/workspace/wrk_…/go`); the id is extracted and validated.
 - `/opencode-go auth-cookie [value]` — sets the auth cookie. With no argument it prompts via an input dialog (recommended: inline slash-command text is persisted to session history, dialog input is not). The dialog is not masked. Accepts a bare cookie value, an `auth=…` pair, a full `Cookie:` header line, or a multi-pair header; stored normalized.
 - `/opencode-go footer <on|off>` — toggles footer status visibility (no argument = toggle).
