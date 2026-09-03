@@ -1,6 +1,7 @@
 packages:
   - auto-session-name
   - memory
+  - opencode-go-usage
 
 allowBuilds:
   "@google/genai": false
