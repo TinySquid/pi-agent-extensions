@@ -8,6 +8,7 @@ Custom [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
 | ----------------------------------------- | ------------------------------------------------------------------- |
 | [auto-session-name](./auto-session-name/) | Auto-generates descriptive session names after the first turn       |
 | [memory](./memory/)                       | Persistent project memory across sessions (MEMORY.md + `/remember`) |
+| [opencode-go-usage](./opencode-go-usage/) | OpenCode Go plan usage in the footer + `/opencode-go` usage table   |
 
 ## Install
 
@@ -16,6 +17,7 @@ Install an extension into pi:
 ```bash
 pi install npm:@tinysquid/pi-auto-session-name
 pi install npm:@tinysquid/pi-memory
+pi install npm:@tinysquid/pi-opencode-go-usage
 ```
 
 ## Development
