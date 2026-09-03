@@ -685,23 +685,32 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
   function completions(
     argumentPrefix: string,
   ): { value: string; label: string; description?: string }[] {
-    const parts = argumentPrefix.split(/\s+/);
+    // pi replaces the ENTIRE argument prefix with `value`, so value
+    // completions must carry the full argument text (subcommand included),
+    // like the built-in /model and /thinking commands do.
+    const trailingSpace = /\s$/.test(argumentPrefix);
+    const parts = argumentPrefix.trim().split(/\s+/).filter(Boolean);
     const last = parts[parts.length - 1] ?? "";
-    if (parts.length <= 1) {
+
+    // Subcommand position (mid-token or empty): complete the subcommand name.
+    if (!trailingSpace && parts.length <= 1) {
       return SUBCOMMANDS.filter((s) => s.value.startsWith(last)).map((s) => ({
         value: s.value,
         label: s.value,
         description: s.description,
       }));
     }
+
+    // Value position.
     const sub = parts[0] ?? "";
+    const prefix = trailingSpace || parts.length < 2 ? "" : last;
     let values: string[] = [];
     if (sub === "footer" || sub === "countdowns") values = ["on", "off"];
     if (sub === "footer-stats")
       values = ["5h", "weekly", "monthly", "all", "clear"];
     return values
-      .filter((value) => value.startsWith(last))
-      .map((value) => ({ value, label: value }));
+      .filter((value) => value.startsWith(prefix))
+      .map((value) => ({ value: `${sub} ${value}`, label: value }));
   }
 
   function parseOnOff(raw: string | undefined): boolean | null | "invalid" {
