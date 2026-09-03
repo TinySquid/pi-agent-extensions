@@ -17,7 +17,8 @@
   ],
   "files": [
     "opencode-go-usage.ts",
-    "README.md"
+    "README.md",
+    "docs"
   ],
   "repository": {
     "type": "git",

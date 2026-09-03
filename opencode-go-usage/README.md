@@ -14,6 +14,12 @@ For local development:
 ln -s $(pwd)/opencode-go-usage/opencode-go-usage.ts ~/.pi/agent/extensions/opencode-go-usage.ts
 ```
 
+## Screenshots
+
+![Usage table widget](docs/opencode-go-ext-usage.png)
+
+![Commands and config panel](docs/opencode-go-ext-commands.png)
+
 ## What it does
 
 - Footer status line (via `ctx.ui.setStatus`, joined onto the built-in footer's extension-status line; the footer itself is never replaced): `OpenCode Go 5h 62% · wk 31% · mo 44%`, or with countdowns on: `OpenCode Go 5h 62% (1h12m) · wk 31% (3d4h) · mo 44% (12d0h)`. Percentages are colored: dim below 70%, warning at 70%+, error at 90%+.
