@@ -525,13 +525,13 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
     const dim = (text: string) => (theme ? theme.fg("dim", text) : text);
     if (!config.footerEnabled) return undefined;
     if (!resolveCreds(config))
-      return dim("go: not configured · /opencode-go help");
+      return dim("OpenCode Go: not configured · /opencode-go help");
     if (meters.length === 0) {
       if (lastError)
         return theme
-          ? theme.fg("warning", `go: ${lastError}`)
-          : `go: ${lastError}`;
-      return dim("go: loading…");
+          ? theme.fg("warning", `OpenCode Go: ${lastError}`)
+          : `OpenCode Go: ${lastError}`;
+      return dim("OpenCode Go: loading…");
     }
     if (config.footerPeriods.length === 0) return undefined;
 
@@ -547,8 +547,8 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
       }
       parts.push(part);
     }
-    if (parts.length === 0) return dim("go: (no usage data)");
-    let text = `${dim("go")} ${parts.join(dim(" · "))}`;
+    if (parts.length === 0) return dim("OpenCode Go: (no usage data)");
+    let text = `${dim("OpenCode Go")} ${parts.join(dim(" · "))}`;
     if (lastError) text += dim(" · stale");
     return text;
   }
@@ -625,22 +625,36 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
       config.footerPeriods.length > 0
         ? config.footerPeriods.join("/")
         : "no periods",
-      `countdowns ${config.footerCountdowns ? "on" : "off"}`,
+      `reset timer ${config.footerCountdowns ? "on" : "off"}`,
       `refresh ${config.refreshMinutes}m`,
     ].join(" · ");
+    const commands: [cmd: string, args: string, description: string][] = [
+      ["usage", "", "show the usage table (default)"],
+      ["workspace-id", "<id|url>", "set the workspace id"],
+      ["auth-cookie", "[value]", "set the auth cookie (no arg = prompt)"],
+      ["footer", "<on|off>", "footer status line visibility"],
+      [
+        "footer-stats",
+        "<list>",
+        "footer periods: 5h, weekly, monthly, all, clear",
+      ],
+      ["footer-reset-timer", "<on|off>", "reset countdown timer in the footer"],
+      ["refresh-interval", "<1-60>", "background refresh TTL (minutes)"],
+      ["disconnect", "", "forget workspace id + cookie"],
+      ["close", "", "hide this panel"],
+      ["help", "", "show commands + current config"],
+    ];
+    const commandWidth = Math.max(
+      ...commands.map(([cmd, args]) => (args ? `${cmd} ${args}` : cmd).length),
+    );
     return [
       theme
         ? theme.fg("accent", "OpenCode Go — commands")
         : "OpenCode Go — commands",
-      "  (no args) | usage       show the usage table",
-      "  workspace-id <id|url>   set the workspace id",
-      "  auth-cookie [value]     set the auth cookie (no arg = prompt)",
-      "  footer <on|off>         footer status line visibility",
-      "  footer-stats <list>     footer periods: 5h, weekly, monthly, all, clear",
-      "  countdowns <on|off>     reset countdowns in the footer",
-      "  refresh <1-60>          background refresh TTL (minutes)",
-      "  disconnect              forget workspace id + cookie",
-      "  close                   hide this panel",
+      ...commands.map(([cmd, args, description]) => {
+        const left = args ? `${cmd} ${args}` : cmd;
+        return `  ${left.padEnd(commandWidth)}  ${description}`;
+      }),
       dim(`Status: ${status}`),
       dim(`Config: ${configPath()}`),
       dim("Env overrides: OPENCODE_GO_WORKSPACE_ID, OPENCODE_GO_AUTH_COOKIE"),
@@ -649,10 +663,26 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
   }
 
   function showPanel(lines: string[], ctx: ExtensionCommandContext): void {
-    if (ctx.hasUI) {
-      ctx.ui.setWidget(WIDGET_KEY, lines, { placement: "aboveEditor" });
-    } else {
+    if (!ctx.hasUI) {
       console.log(lines.join("\n"));
+      return;
+    }
+    if (ctx.mode === "tui") {
+      // String-array widgets are capped at 10 lines in the interactive TUI;
+      // render through the component factory so long panels (help) show fully.
+      ctx.ui.setWidget(
+        WIDGET_KEY,
+        () => ({
+          invalidate() {},
+          render() {
+            return lines;
+          },
+        }),
+        { placement: "aboveEditor" },
+      );
+    } else {
+      // RPC mode supports string arrays only — factory functions are ignored.
+      ctx.ui.setWidget(WIDGET_KEY, lines, { placement: "aboveEditor" });
     }
   }
 
@@ -674,11 +704,11 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
       description: "footer periods: 5h, weekly, monthly, all, clear",
     },
     {
-      value: "countdowns",
-      description: "reset countdowns in the footer on/off",
+      value: "footer-reset-timer",
+      description: "reset countdown timer in the footer on/off",
     },
     {
-      value: "refresh",
+      value: "refresh-interval",
       description: "background refresh TTL in minutes (1-60)",
     },
     { value: "disconnect", description: "forget workspace id + cookie" },
@@ -709,7 +739,8 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
     const sub = parts[0] ?? "";
     const prefix = trailingSpace || parts.length < 2 ? "" : last;
     let values: string[] = [];
-    if (sub === "footer" || sub === "countdowns") values = ["on", "off"];
+    if (sub === "footer" || sub === "footer-reset-timer")
+      values = ["on", "off"];
     if (sub === "footer-stats")
       values = ["5h", "weekly", "monthly", "all", "clear"];
     return values
@@ -732,7 +763,7 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
 
   pi.registerCommand("opencode-go", {
     description:
-      "OpenCode Go usage: table + footer status. Subcommands: usage, workspace-id, auth-cookie, footer, footer-stats, countdowns, refresh, disconnect, close, help",
+      "OpenCode Go usage: table + footer status. Subcommands: usage, workspace-id, auth-cookie, footer, footer-stats, footer-reset-timer, refresh-interval, disconnect, close, help",
     getArgumentCompletions: completions,
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       ui = ctx.ui;
@@ -864,27 +895,30 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
             return;
           }
 
-          case "countdowns": {
+          case "footer-reset-timer": {
             const parsed = parseOnOff(rest[0]);
             if (parsed === "invalid") {
-              ctx.ui.notify("Usage: /opencode-go countdowns <on|off>", "error");
+              ctx.ui.notify(
+                "Usage: /opencode-go footer-reset-timer <on|off>",
+                "error",
+              );
               return;
             }
             config.footerCountdowns = parsed ?? !config.footerCountdowns;
             await saveConfig(config);
             renderFooter();
             ctx.ui.notify(
-              `Footer countdowns ${config.footerCountdowns ? "on" : "off"}`,
+              `Footer reset timer ${config.footerCountdowns ? "on" : "off"}`,
               "info",
             );
             return;
           }
 
-          case "refresh": {
+          case "refresh-interval": {
             const minutes = Number(rest[0]);
             if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) {
               ctx.ui.notify(
-                "Usage: /opencode-go refresh <1-60> (minutes)",
+                "Usage: /opencode-go refresh-interval <1-60> (minutes)",
                 "error",
               );
               return;

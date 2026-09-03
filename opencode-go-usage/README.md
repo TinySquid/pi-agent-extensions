@@ -16,14 +16,14 @@ ln -s $(pwd)/opencode-go-usage/opencode-go-usage.ts ~/.pi/agent/extensions/openc
 
 ## What it does
 
-- Footer status line (via `ctx.ui.setStatus`, joined onto the built-in footer's extension-status line; the footer itself is never replaced): `go 5h 62% · wk 31% · mo 44%`, or with countdowns on: `go 5h 62% (1h12m) · wk 31% (3d4h) · mo 44% (12d0h)`. Percentages are colored: dim below 70%, warning at 70%+, error at 90%+.
+- Footer status line (via `ctx.ui.setStatus`, joined onto the built-in footer's extension-status line; the footer itself is never replaced): `OpenCode Go 5h 62% · wk 31% · mo 44%`, or with countdowns on: `OpenCode Go 5h 62% (1h12m) · wk 31% (3d4h) · mo 44% (12d0h)`. Percentages are colored: dim below 70%, warning at 70%+, error at 90%+.
 - `/opencode-go` (or `/opencode-go usage`) — force-fetches and shows a bordered ASCII table widget above the editor with a usage bar, percentage, and reset countdown per window. `/opencode-go close` hides it.
 - `/opencode-go workspace-id <id|url>` — sets the workspace id. Accepts a bare `wrk_…` id or a full dashboard URL (`https://opencode.ai/workspace/wrk_…/go`); the id is extracted and validated.
 - `/opencode-go auth-cookie [value]` — sets the auth cookie. With no argument it prompts via an input dialog (recommended: inline slash-command text is persisted to session history, dialog input is not). The dialog is not masked. Accepts a bare cookie value, an `auth=…` pair, a full `Cookie:` header line, or a multi-pair header; stored normalized.
 - `/opencode-go footer <on|off>` — toggles footer status visibility (no argument = toggle).
 - `/opencode-go footer-stats <list>` — sets which periods the footer shows: `5h`, `weekly`, `monthly`, a comma list (`5hr,mo`), `all`, or `clear`/`none`. Aliases: `5h/5hr/rolling`, `weekly/wk/week`, `monthly/mo/month`. Stored in canonical order.
-- `/opencode-go countdowns <on|off>` — toggles reset countdowns in the footer (no argument = toggle). Default off.
-- `/opencode-go refresh <1-60>` — background refresh TTL in minutes. Default 3.
+- `/opencode-go footer-reset-timer <on|off>` — toggles reset countdown timers in the footer (no argument = toggle). Default off.
+- `/opencode-go refresh-interval <1-60>` — background refresh TTL in minutes. Default 3.
 - `/opencode-go disconnect` — forgets workspace id + cookie (display settings kept). Warns if `OPENCODE_GO_*` env vars still supply credentials.
 - `/opencode-go help` — command list + current config state as a widget.
 - Subcommand and value autocomplete while typing the command.
@@ -52,8 +52,8 @@ Config file: `~/.pi/agent/opencode_go_usage_settings.json` (created with default
 
 ## Behavior notes
 
-- Unconfigured: the footer shows a dim hint `go: not configured · /opencode-go help` (suppressed when `footerEnabled` is false); `/opencode-go usage` shows setup instructions.
-- Failure display: on fetch failure the footer keeps the last data with a `· stale` marker; if no data was ever fetched it shows the error (e.g. `go: cookie expired — set a fresh one with /opencode-go auth-cookie`). The table shows `Stale — <error>` under the data.
+- Unconfigured: the footer shows a dim hint `OpenCode Go: not configured · /opencode-go help` (suppressed when `footerEnabled` is false); `/opencode-go usage` shows setup instructions.
+- Failure display: on fetch failure the footer keeps the last data with a `· stale` marker; if no data was ever fetched it shows the error (e.g. `OpenCode Go: cookie expired — set a fresh one with /opencode-go auth-cookie`). The table shows `Stale — <error>` under the data.
 - A 200 response can still be a login page; redirect-to-login, 401/403, and login markers in the HTML are all detected as an expired cookie. A page without the usage fields reports "opencode.ai markup may have changed" instead of showing a confident zero.
 - The dashboard carries percentages and reset seconds only — no dollar amounts — so neither does the extension. `monthlyUsage` can be absent; that row is simply omitted.
 - This is an HTML scrape of a SolidStart hydration payload (`rollingUsage:$R[N]={…usagePercent,resetInSec}`); a redesign of the opencode.ai dashboard will break parsing, and the extension will say so.
