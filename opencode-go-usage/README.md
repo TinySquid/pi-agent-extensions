@@ -26,7 +26,7 @@ ln -s $(pwd)/opencode-go-usage/opencode-go-usage.ts ~/.pi/agent/extensions/openc
 - `/opencode-go refresh-interval <1-60>` — background refresh TTL in minutes. Default 3.
 - `/opencode-go disconnect` — forgets workspace id + cookie (display settings kept). Warns if `OPENCODE_GO_*` env vars still supply credentials.
 - `/opencode-go help` — command list + current config state as a widget.
-- Subcommand and value autocomplete while typing the command.
+- Subcommand and value autocomplete while typing the command. Typing just `/opencode-go` immediately offers the subcommand list (the extension wraps the autocomplete provider) — Tab or Enter picks a subcommand without needing a space first.
 - Background refresh: a 30s timer fetches only when the cached data is older than the TTL; `turn_end` always refreshes (usage just changed); the `usage` command always fetches. Concurrent triggers share one in-flight request.
 - On session start the extension loads the config, creates the default config file if missing, renders the footer immediately (last known state or a setup hint), and fetches without blocking startup.
 
