@@ -11,8 +11,8 @@
  * Without a config file, the cheapest available model (respecting the
  * session's model scoping) is used; falling back to the active model. That
  * default pick is then written to the config file as a starting point for
- * user edits (an unusable file is regenerated; a valid one is never
- * overwritten).
+ * user edits (an unusable file is regenerated; a file with a valid model has
+ * only its invalid fields dropped, in place).
  *
  * Thinking is explicitly disabled for reasoning-capable models unless the
  * config opts into a level ("minimal" ... "max").
@@ -56,87 +56,91 @@ const sessionNamePrompt = (userMessage: string): string => {
 
 type ConfigRead =
   | { status: "ok"; config: NameConfig }
-  | { status: "invalid" }
-  | { status: "missing" };
+  /** valid provider/model; malformed temperature/thinking fields were dropped */
+  | { status: "repair"; config: NameConfig }
+  /** missing or unusable — regenerate the whole file from the default pick */
+  | { status: "regen" };
 
 const configPath = (): string => join(getAgentDir(), CONFIG_FILE);
 
-const readConfig = (): ConfigRead => {
+const writeConfigFile = (config: NameConfig, message: string): void => {
   try {
-    const parsed = JSON.parse(
+    writeFileSync(configPath(), `${JSON.stringify(config, null, 2)}\n`);
+    console.warn(`[auto-session-name] ${message}`);
+  } catch (err) {
+    console.warn(`[auto-session-name] failed to write ${CONFIG_FILE}:`, err);
+  }
+};
+
+const readConfig = (): ConfigRead => {
+  let parsed: Partial<NameConfig>;
+  try {
+    parsed = JSON.parse(
       readFileSync(configPath(), "utf8"),
     ) as Partial<NameConfig>;
-    if (
-      typeof parsed.provider === "string" &&
-      parsed.provider.length > 0 &&
-      typeof parsed.model === "string" &&
-      parsed.model.length > 0
-    ) {
-      const config: NameConfig = {
-        provider: parsed.provider,
-        model: parsed.model,
-      };
-      if (parsed.temperature !== undefined) {
-        if (typeof parsed.temperature === "number") {
-          config.temperature = parsed.temperature;
-        } else {
-          console.warn(
-            `[auto-session-name] invalid ${CONFIG_FILE}: "temperature" must be a number — ignoring`,
-          );
-        }
-      }
-      if (parsed.thinking !== undefined) {
-        if (
-          typeof parsed.thinking === "string" &&
-          (THINKING_LEVELS as readonly string[]).includes(parsed.thinking)
-        ) {
-          config.thinking = parsed.thinking;
-        } else {
-          console.warn(
-            `[auto-session-name] invalid ${CONFIG_FILE}: "thinking" must be one of ${THINKING_LEVELS.join(" | ")} — ignoring`,
-          );
-        }
-      }
-      return { status: "ok", config };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { status: "regen" };
     }
     console.warn(
-      `[auto-session-name] invalid ${CONFIG_FILE} — regenerating from default pick (expected { "provider": "...", "model": "...", "temperature"?: number, "thinking"?: "off" | "minimal" | ... | "max" })`,
+      `[auto-session-name] invalid ${CONFIG_FILE} — regenerating from default pick (${err})`,
     );
-    return { status: "invalid" };
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.warn(`[auto-session-name] failed to read ${CONFIG_FILE}:`, err);
-      return { status: "invalid" };
-    }
-    return { status: "missing" };
+    return { status: "regen" };
   }
+  if (
+    typeof parsed.provider !== "string" ||
+    parsed.provider.length === 0 ||
+    typeof parsed.model !== "string" ||
+    parsed.model.length === 0
+  ) {
+    console.warn(
+      `[auto-session-name] invalid ${CONFIG_FILE}: expected { "provider": "...", "model": "...", "temperature"?: number, "thinking"?: "off" | "minimal" | ... | "max" } — regenerating from default pick`,
+    );
+    return { status: "regen" };
+  }
+
+  const config: NameConfig = {
+    provider: parsed.provider,
+    model: parsed.model,
+  };
+  let dropped = false;
+  if (parsed.temperature !== undefined) {
+    if (typeof parsed.temperature === "number") {
+      config.temperature = parsed.temperature;
+    } else {
+      console.warn(
+        `[auto-session-name] invalid ${CONFIG_FILE}: "temperature" must be a number — dropping it`,
+      );
+      dropped = true;
+    }
+  }
+  if (parsed.thinking !== undefined) {
+    if (
+      typeof parsed.thinking === "string" &&
+      (THINKING_LEVELS as readonly string[]).includes(parsed.thinking)
+    ) {
+      config.thinking = parsed.thinking;
+    } else {
+      console.warn(
+        `[auto-session-name] invalid ${CONFIG_FILE}: "thinking" must be one of ${THINKING_LEVELS.join(" | ")} — dropping it`,
+      );
+      dropped = true;
+    }
+  }
+  return dropped ? { status: "repair", config } : { status: "ok", config };
 };
 
 /**
  * Generate a config pinning the model the default pick resolved to, so users
  * have a starting point to edit. Called when the file is missing or unusable
- * (unparseable, missing/invalid provider-model) — a valid file is never
- * overwritten.
+ * (no valid provider/model). A file with a valid provider/model is never
+ * overwritten — malformed option fields are repaired in place instead.
  */
 const writeDefaultConfig = (model: Model<Api>): void => {
-  try {
-    writeFileSync(
-      configPath(),
-      `${JSON.stringify(
-        { provider: model.provider, model: model.id },
-        null,
-        2,
-      )}\n`,
-    );
-    console.warn(
-      `[auto-session-name] generated ${CONFIG_FILE} (provider "${model.provider}", model "${model.id}") — edit it to change the naming model or request options`,
-    );
-  } catch (err) {
-    console.warn(
-      `[auto-session-name] failed to write default ${CONFIG_FILE}:`,
-      err,
-    );
-  }
+  writeConfigFile(
+    { provider: model.provider, model: model.id },
+    `generated ${CONFIG_FILE} (provider "${model.provider}", model "${model.id}") — edit it to change the naming model or request options`,
+  );
 };
 
 const pickModel = (
@@ -237,7 +241,7 @@ const generateSessionName = async (
 ) => {
   try {
     const read = readConfig();
-    const config = read.status === "ok" ? read.config : undefined;
+    const config = read.status === "regen" ? undefined : read.config;
     const model = pickModel(ctx, config);
     if (!model) {
       console.warn(
@@ -245,8 +249,14 @@ const generateSessionName = async (
       );
       return;
     }
-    if (read.status !== "ok") {
+    if (read.status === "regen") {
       writeDefaultConfig(model);
+    } else if (read.status === "repair") {
+      // Keep the user's model choice; rewrite without the invalid fields only
+      writeConfigFile(
+        read.config,
+        `rewrote ${CONFIG_FILE} without invalid fields (provider "${read.config.provider}", model "${read.config.model}" kept)`,
+      );
     }
 
     const response = await ctx.modelRegistry.complete(
