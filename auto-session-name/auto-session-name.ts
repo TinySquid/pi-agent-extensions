@@ -11,7 +11,8 @@
  * Without a config file, the cheapest available model (respecting the
  * session's model scoping) is used; falling back to the active model. That
  * default pick is then written to the config file as a starting point for
- * user edits (an existing file is never overwritten).
+ * user edits (an unusable file is regenerated; a valid one is never
+ * overwritten).
  *
  * Thinking is explicitly disabled for reasoning-capable models unless the
  * config opts into a level ("minimal" ... "max").
@@ -99,7 +100,7 @@ const readConfig = (): ConfigRead => {
       return { status: "ok", config };
     }
     console.warn(
-      `[auto-session-name] invalid ${CONFIG_FILE}: expected { "provider": "...", "model": "...", "temperature"?: number, "thinking"?: "off" | "minimal" | ... | "max" } — using default pick`,
+      `[auto-session-name] invalid ${CONFIG_FILE} — regenerating from default pick (expected { "provider": "...", "model": "...", "temperature"?: number, "thinking"?: "off" | "minimal" | ... | "max" })`,
     );
     return { status: "invalid" };
   } catch (err) {
@@ -112,9 +113,10 @@ const readConfig = (): ConfigRead => {
 };
 
 /**
- * Generate a default config pinning the model the default pick resolved to,
- * so users have a starting point to edit. Only called when the file is
- * missing — an existing (even invalid) file is never overwritten.
+ * Generate a config pinning the model the default pick resolved to, so users
+ * have a starting point to edit. Called when the file is missing or unusable
+ * (unparseable, missing/invalid provider-model) — a valid file is never
+ * overwritten.
  */
 const writeDefaultConfig = (model: Model<Api>): void => {
   try {
@@ -243,7 +245,7 @@ const generateSessionName = async (
       );
       return;
     }
-    if (read.status === "missing") {
+    if (read.status !== "ok") {
       writeDefaultConfig(model);
     }
 

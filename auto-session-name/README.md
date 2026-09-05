@@ -31,9 +31,9 @@ Config file `~/.pi/agent/auto-session-name.json` pins the naming model and reque
 - `temperature` — sampling temperature passed to the naming request as-is. Omitted by default (provider default applies).
 - `thinking` — reasoning level for the naming request: `"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"`. Defaults to `"off"`.
 
-If no config file exists, one is generated on first use, pinning the cheapest available model by input token cost, respecting session model scoping (`enabledModels` / `--models`); if none, the active session model is used. An existing file is never overwritten.
+If no config file exists, one is generated on first use, pinning the cheapest available model by input token cost, respecting session model scoping (`enabledModels` / `--models`); if none, the active session model is used. A config file that can't be used — unparseable JSON, or missing/invalid `provider`/`model` — is likewise regenerated from the default pick (with a warning).
 
-A configured model that is unknown or has no configured credentials falls back to the default pick (with a warning). A config file that can't be parsed is likewise ignored with a warning and left untouched. A malformed `temperature` or `thinking` value is ignored with a warning; the rest of the config still applies.
+A configured model that is unknown or has no configured credentials falls back to the default pick (with a warning).
 
 ## Behavior notes
 
