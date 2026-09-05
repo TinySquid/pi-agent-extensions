@@ -131,8 +131,9 @@ const pickModel = (
  *   (adapters guard provider-specific temperature support internally).
  * - thinking: defaults to "off". For reasoning-capable models we disable it
  *   explicitly, because some APIs default reasoning on (Google, OpenAI
- *   o-series). For models without reasoning (e.g. gemma) nothing is sent —
- *   thinking is off by construction. Non-covered APIs disable by omission.
+ *   o-series). Note some APIs cannot fully disable thinking (Google maps
+ *   "off" to the lowest supported level with thought output hidden).
+ *   Non-reasoning models and uncovered APIs disable by omission.
  */
 const buildRequestOptions = (
   model: Model<Api>,

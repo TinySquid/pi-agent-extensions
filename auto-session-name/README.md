@@ -29,7 +29,7 @@ Optional config file `~/.pi/agent/auto-session-name.json` pins the naming model 
 
 - `provider`, `model` — pin the naming model (see below).
 - `temperature` — sampling temperature passed to the naming request as-is. Omitted by default (provider default applies).
-- `thinking` — reasoning level for the naming request: `"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"`. Defaults to `"off"`: for reasoning-capable models, thinking is explicitly disabled (Google and OpenAI reasoning models default it on). For models without reasoning (e.g. gemma), nothing is sent — thinking is off by construction. Unsupported APIs disable by omission.
+- `thinking` — reasoning level for the naming request: `"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"`. Defaults to `"off"`: for reasoning-capable models, thinking is explicitly disabled (Google and OpenAI reasoning models default it on). Note some APIs cannot fully disable thinking — Google maps `"off"` to the lowest supported level with thought output hidden (Gemma 4 and Gemini 3 Flash: `MINIMAL`; only Gemini 2.x uses a zero budget). Unsupported APIs disable by omission.
 
 Without a config file, the cheapest available model by input token cost is used, respecting session model scoping (`enabledModels` / `--models`); if none, the active session model.
 
