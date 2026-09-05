@@ -85,7 +85,11 @@ const writeConfigFile = (config: NameConfig, message: string): void => {
   }
 };
 
-const isNumber = (value: unknown): value is number => typeof value === "number";
+/** Providers cap temperature (Anthropic 0–1, Google/OpenAI 0–2); 0–2 is the
+ * widest valid range. Out-of-range values would be rejected by the API on
+ * every naming run, so they are treated as malformed and repaired away. */
+const isTemperature = (value: unknown): value is number =>
+  typeof value === "number" && value >= 0 && value <= 2;
 const isThinkingLevel = (value: unknown): value is ConfigThinkingLevel =>
   typeof value === "string" &&
   (THINKING_LEVELS as readonly string[]).includes(value);
@@ -143,8 +147,8 @@ const readConfig = (): ConfigRead => {
   const temperature = readField(
     "temperature",
     parsed.temperature,
-    isNumber,
-    "must be a number",
+    isTemperature,
+    "must be a number between 0 and 2",
   );
   const thinking = readField(
     "thinking",
