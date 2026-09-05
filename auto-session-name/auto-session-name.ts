@@ -9,7 +9,9 @@
  *   { "provider": "google", "model": "gemma-4-31b-it", "temperature": 0.2 }
  *
  * Without a config file, the cheapest available model (respecting the
- * session's model scoping) is used; falling back to the active model.
+ * session's model scoping) is used; falling back to the active model. That
+ * default pick is then written to the config file as a starting point for
+ * user edits (an existing file is never overwritten).
  *
  * Thinking is explicitly disabled for reasoning-capable models unless the
  * config opts into a level ("minimal" ... "max").
@@ -21,7 +23,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const CONFIG_FILE = "auto-session-name.json";
@@ -51,10 +53,17 @@ const sessionNamePrompt = (userMessage: string): string => {
   ].join("\n");
 };
 
-const readConfig = (): NameConfig | undefined => {
+type ConfigRead =
+  | { status: "ok"; config: NameConfig }
+  | { status: "invalid" }
+  | { status: "missing" };
+
+const configPath = (): string => join(getAgentDir(), CONFIG_FILE);
+
+const readConfig = (): ConfigRead => {
   try {
     const parsed = JSON.parse(
-      readFileSync(join(getAgentDir(), CONFIG_FILE), "utf8"),
+      readFileSync(configPath(), "utf8"),
     ) as Partial<NameConfig>;
     if (
       typeof parsed.provider === "string" &&
@@ -87,17 +96,45 @@ const readConfig = (): NameConfig | undefined => {
           );
         }
       }
-      return config;
+      return { status: "ok", config };
     }
     console.warn(
       `[auto-session-name] invalid ${CONFIG_FILE}: expected { "provider": "...", "model": "...", "temperature"?: number, "thinking"?: "off" | "minimal" | ... | "max" } — using default pick`,
     );
+    return { status: "invalid" };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
       console.warn(`[auto-session-name] failed to read ${CONFIG_FILE}:`, err);
+      return { status: "invalid" };
     }
+    return { status: "missing" };
   }
-  return undefined;
+};
+
+/**
+ * Generate a default config pinning the model the default pick resolved to,
+ * so users have a starting point to edit. Only called when the file is
+ * missing — an existing (even invalid) file is never overwritten.
+ */
+const writeDefaultConfig = (model: Model<Api>): void => {
+  try {
+    writeFileSync(
+      configPath(),
+      `${JSON.stringify(
+        { provider: model.provider, model: model.id },
+        null,
+        2,
+      )}\n`,
+    );
+    console.warn(
+      `[auto-session-name] generated ${CONFIG_FILE} (provider "${model.provider}", model "${model.id}") — edit it to change the naming model or request options`,
+    );
+  } catch (err) {
+    console.warn(
+      `[auto-session-name] failed to write default ${CONFIG_FILE}:`,
+      err,
+    );
+  }
 };
 
 const pickModel = (
@@ -197,13 +234,17 @@ const generateSessionName = async (
   prompt: string,
 ) => {
   try {
-    const config = readConfig();
+    const read = readConfig();
+    const config = read.status === "ok" ? read.config : undefined;
     const model = pickModel(ctx, config);
     if (!model) {
       console.warn(
         "[auto-session-name] no model available — skipping session naming",
       );
       return;
+    }
+    if (read.status === "missing") {
+      writeDefaultConfig(model);
     }
 
     const response = await ctx.modelRegistry.complete(
