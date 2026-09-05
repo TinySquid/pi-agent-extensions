@@ -4,15 +4,18 @@
  * After the first turn, this extension generates a short, descriptive
  * name for the session using a cheap available model.
  *
- * The naming model can be overridden via a global config file:
- * ~/.pi/agent/auto-session-name.json
- *   { "provider": "google", "model": "gemma-4-31b-it" }
+ * The naming model and request options can be overridden via a global config
+ * file: ~/.pi/agent/auto-session-name.json
+ *   { "provider": "google", "model": "gemma-4-31b-it", "temperature": 0.2 }
  *
  * Without a config file, the cheapest available model (respecting the
  * session's model scoping) is used; falling back to the active model.
+ *
+ * Thinking is explicitly disabled for reasoning-capable models unless the
+ * config opts into a level ("minimal" ... "max").
  */
 
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, ModelsApiStreamOptions } from "@earendil-works/pi-ai";
 import {
   getAgentDir,
   type ExtensionAPI,
@@ -23,7 +26,23 @@ import { join } from "node:path";
 
 const CONFIG_FILE = "auto-session-name.json";
 
-type NameConfig = { provider: string; model: string };
+const THINKING_LEVELS = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+type ConfigThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+type NameConfig = {
+  provider: string;
+  model: string;
+  temperature?: number;
+  thinking?: ConfigThinkingLevel;
+};
 
 const sessionNamePrompt = (userMessage: string): string => {
   return [
@@ -43,10 +62,35 @@ const readConfig = (): NameConfig | undefined => {
       typeof parsed.model === "string" &&
       parsed.model.length > 0
     ) {
-      return { provider: parsed.provider, model: parsed.model };
+      const config: NameConfig = {
+        provider: parsed.provider,
+        model: parsed.model,
+      };
+      if (parsed.temperature !== undefined) {
+        if (typeof parsed.temperature === "number") {
+          config.temperature = parsed.temperature;
+        } else {
+          console.warn(
+            `[auto-session-name] invalid ${CONFIG_FILE}: "temperature" must be a number — ignoring`,
+          );
+        }
+      }
+      if (parsed.thinking !== undefined) {
+        if (
+          typeof parsed.thinking === "string" &&
+          (THINKING_LEVELS as readonly string[]).includes(parsed.thinking)
+        ) {
+          config.thinking = parsed.thinking;
+        } else {
+          console.warn(
+            `[auto-session-name] invalid ${CONFIG_FILE}: "thinking" must be one of ${THINKING_LEVELS.join(" | ")} — ignoring`,
+          );
+        }
+      }
+      return config;
     }
     console.warn(
-      `[auto-session-name] invalid ${CONFIG_FILE}: expected { "provider": "...", "model": "..." } — using default pick`,
+      `[auto-session-name] invalid ${CONFIG_FILE}: expected { "provider": "...", "model": "...", "temperature"?: number, "thinking"?: "off" | "minimal" | ... | "max" } — using default pick`,
     );
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -56,8 +100,10 @@ const readConfig = (): NameConfig | undefined => {
   return undefined;
 };
 
-const pickModel = (ctx: ExtensionContext): Model<Api> | undefined => {
-  const config = readConfig();
+const pickModel = (
+  ctx: ExtensionContext,
+  config: NameConfig | undefined,
+): Model<Api> | undefined => {
   if (config) {
     const model = ctx.modelRegistry.find(config.provider, config.model);
     if (model && ctx.modelRegistry.hasConfiguredAuth(model)) {
@@ -78,13 +124,80 @@ const pickModel = (ctx: ExtensionContext): Model<Api> | undefined => {
   return ctx.model;
 };
 
+/**
+ * Build per-API request options for the naming call.
+ *
+ * - temperature: passed through as-is when configured; otherwise omitted
+ *   (adapters guard provider-specific temperature support internally).
+ * - thinking: defaults to "off". For reasoning-capable models we disable it
+ *   explicitly, because some APIs default reasoning on (Google, OpenAI
+ *   o-series). For models without reasoning (e.g. gemma) nothing is sent —
+ *   thinking is off by construction. Non-covered APIs disable by omission.
+ */
+const buildRequestOptions = (
+  model: Model<Api>,
+  config: NameConfig | undefined,
+): ModelsApiStreamOptions<Api> => {
+  const options: Record<string, unknown> = {};
+  if (config?.temperature !== undefined) {
+    options.temperature = config.temperature;
+  }
+
+  const level: ConfigThinkingLevel = config?.thinking ?? "off";
+  if (!model.reasoning) {
+    return options as ModelsApiStreamOptions<Api>;
+  }
+
+  switch (model.api) {
+    case "anthropic-messages": {
+      if (level === "off") {
+        options.thinkingEnabled = false;
+      } else {
+        options.thinkingEnabled = true;
+        // Anthropic has no "minimal" effort
+        options.effort = level === "minimal" ? "low" : level;
+      }
+      break;
+    }
+    case "google-generative-ai":
+    case "google-vertex": {
+      options.thinking =
+        level === "off"
+          ? { enabled: false }
+          : {
+              enabled: true,
+              level:
+                level === "xhigh" || level === "max"
+                  ? "HIGH"
+                  : level.toUpperCase(),
+            };
+      break;
+    }
+    case "openai-responses":
+    case "openai-completions":
+    case "azure-openai-responses": {
+      options.reasoningEffort =
+        level === "off"
+          ? "minimal"
+          : level === "xhigh" || level === "max"
+            ? "high"
+            : level;
+      break;
+    }
+    default:
+      break;
+  }
+  return options as ModelsApiStreamOptions<Api>;
+};
+
 const generateSessionName = async (
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   prompt: string,
 ) => {
   try {
-    const model = pickModel(ctx);
+    const config = readConfig();
+    const model = pickModel(ctx, config);
     if (!model) {
       console.warn(
         "[auto-session-name] no model available — skipping session naming",
@@ -92,15 +205,19 @@ const generateSessionName = async (
       return;
     }
 
-    const response = await ctx.modelRegistry.complete(model, {
-      messages: [
-        {
-          role: "user",
-          content: [{ type: "text", text: sessionNamePrompt(prompt) }],
-          timestamp: Date.now(),
-        },
-      ],
-    });
+    const response = await ctx.modelRegistry.complete(
+      model,
+      {
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "text", text: sessionNamePrompt(prompt) }],
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      buildRequestOptions(model, config),
+    );
 
     // Defend against model shenanigans
     const title = response.content

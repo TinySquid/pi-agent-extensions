@@ -16,15 +16,24 @@ ln -s $(pwd)/auto-session-name/auto-session-name.ts ~/.pi/agent/extensions/auto-
 
 ## Configuration
 
-Optional config file `~/.pi/agent/auto-session-name.json` pins the naming model:
+Optional config file `~/.pi/agent/auto-session-name.json` pins the naming model and request options:
 
 ```json
-{ "provider": "google", "model": "gemma-4-31b-it" }
+{
+  "provider": "google",
+  "model": "gemma-4-26b-a4b-it",
+  "temperature": 0.2,
+  "thinking": "off"
+}
 ```
+
+- `provider`, `model` — pin the naming model (see below).
+- `temperature` — sampling temperature passed to the naming request as-is. Omitted by default (provider default applies).
+- `thinking` — reasoning level for the naming request: `"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"`. Defaults to `"off"`: for reasoning-capable models, thinking is explicitly disabled (Google and OpenAI reasoning models default it on). For models without reasoning (e.g. gemma), nothing is sent — thinking is off by construction. Unsupported APIs disable by omission.
 
 Without a config file, the cheapest available model by input token cost is used, respecting session model scoping (`enabledModels` / `--models`); if none, the active session model.
 
-The file is read at naming time, so edits apply on the next session — no restart. A configured model that is unknown or has no configured credentials falls back to the default pick (with a warning).
+The file is read at naming time, so edits apply on the next session — no restart. A configured model that is unknown or has no configured credentials falls back to the default pick (with a warning). A malformed `temperature` or `thinking` value is ignored with a warning; the rest of the config still applies.
 
 ## Behavior notes
 
