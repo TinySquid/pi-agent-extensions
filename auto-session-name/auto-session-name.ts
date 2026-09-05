@@ -6,7 +6,8 @@
  *
  * The naming model and request options can be overridden via a global config
  * file: ~/.pi/agent/auto-session-name.json
- *   { "provider": "google", "model": "gemma-4-31b-it", "temperature": 0.2 }
+ *   { "provider": "google", "model": "gemma-4-26b-a4b-it", "temperature": 0.2,
+ *     "thinking": "off" }
  *
  * Without a config file, the cheapest available model (respecting the
  * session's model scoping) is used; falling back to the active model. That
@@ -14,11 +15,23 @@
  * user edits (an unusable file is regenerated; a file with a valid model has
  * only its invalid fields dropped, in place).
  *
- * Thinking is explicitly disabled for reasoning-capable models unless the
- * config opts into a level ("minimal" ... "max").
+ * Thinking defaults to off; the configured level is clamped to the model's
+ * supported levels via pi-ai's clampThinkingLevel.
  */
 
-import type { Api, Model, ModelsApiStreamOptions } from "@earendil-works/pi-ai";
+import {
+  clampThinkingLevel,
+  type AnthropicOptions,
+  type Api,
+  type AzureOpenAIResponsesOptions,
+  type GoogleApiThinkingLevel,
+  type GoogleOptions,
+  type GoogleVertexOptions,
+  type Model,
+  type OpenAICompletionsOptions,
+  type OpenAIResponsesOptions,
+  type StreamOptions,
+} from "@earendil-works/pi-ai";
 import {
   getAgentDir,
   type ExtensionAPI,
@@ -72,6 +85,30 @@ const writeConfigFile = (config: NameConfig, message: string): void => {
   }
 };
 
+const isNumber = (value: unknown): value is number => typeof value === "number";
+const isThinkingLevel = (value: unknown): value is ConfigThinkingLevel =>
+  typeof value === "string" &&
+  (THINKING_LEVELS as readonly string[]).includes(value);
+
+/** Returns the field value when valid; warns and drops it otherwise. */
+const readField = <T>(
+  name: string,
+  value: unknown,
+  isValid: (v: unknown) => v is T,
+  expectation: string,
+): T | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (isValid(value)) {
+    return value;
+  }
+  console.warn(
+    `[auto-session-name] invalid ${CONFIG_FILE}: "${name}" ${expectation} — dropping it`,
+  );
+  return undefined;
+};
+
 const readConfig = (): ConfigRead => {
   let parsed: Partial<NameConfig>;
   try {
@@ -103,30 +140,27 @@ const readConfig = (): ConfigRead => {
     provider: parsed.provider,
     model: parsed.model,
   };
-  let dropped = false;
-  if (parsed.temperature !== undefined) {
-    if (typeof parsed.temperature === "number") {
-      config.temperature = parsed.temperature;
-    } else {
-      console.warn(
-        `[auto-session-name] invalid ${CONFIG_FILE}: "temperature" must be a number — dropping it`,
-      );
-      dropped = true;
-    }
+  const temperature = readField(
+    "temperature",
+    parsed.temperature,
+    isNumber,
+    "must be a number",
+  );
+  const thinking = readField(
+    "thinking",
+    parsed.thinking,
+    isThinkingLevel,
+    `must be one of ${THINKING_LEVELS.join(" | ")}`,
+  );
+  if (temperature !== undefined) {
+    config.temperature = temperature;
   }
-  if (parsed.thinking !== undefined) {
-    if (
-      typeof parsed.thinking === "string" &&
-      (THINKING_LEVELS as readonly string[]).includes(parsed.thinking)
-    ) {
-      config.thinking = parsed.thinking;
-    } else {
-      console.warn(
-        `[auto-session-name] invalid ${CONFIG_FILE}: "thinking" must be one of ${THINKING_LEVELS.join(" | ")} — dropping it`,
-      );
-      dropped = true;
-    }
+  if (thinking !== undefined) {
+    config.thinking = thinking;
   }
+  const dropped =
+    (parsed.temperature !== undefined && temperature === undefined) ||
+    (parsed.thinking !== undefined && thinking === undefined);
   return dropped ? { status: "repair", config } : { status: "ok", config };
 };
 
@@ -167,71 +201,92 @@ const pickModel = (
   return ctx.model;
 };
 
+/** Per-API stream option shapes pi-ai's `complete()` accepts. */
+type ApiOptions =
+  | AnthropicOptions
+  | GoogleOptions
+  | GoogleVertexOptions
+  | OpenAIResponsesOptions
+  | OpenAICompletionsOptions
+  | AzureOpenAIResponsesOptions
+  | StreamOptions;
+
+const OPENAI_APIS = [
+  "openai-responses",
+  "openai-completions",
+  "azure-openai-responses",
+] as const;
+
+const isOpenAiApi = (api: Api): boolean =>
+  (OPENAI_APIS as readonly string[]).includes(api);
+
 /**
  * Build per-API request options for the naming call.
  *
  * - temperature: passed through as-is when configured; otherwise omitted
- *   (adapters guard provider-specific temperature support internally).
- * - thinking: defaults to "off". For reasoning-capable models we disable it
- *   explicitly, because some APIs default reasoning on (Google, OpenAI
- *   o-series). Note some APIs cannot fully disable thinking (Google maps
- *   "off" to the lowest supported level with thought output hidden).
- *   Non-reasoning models and uncovered APIs disable by omission.
+ *   (adapters guard provider-specific temperature support internally; note
+ *   Anthropic drops it when thinking is enabled).
+ * - thinking: defaults to "off". The configured level is clamped to the
+ *   model's supported levels with pi-ai's clampThinkingLevel, so model
+ *   capability and thinkingLevelMap overrides are respected. "off" disables
+ *   thinking explicitly for reasoning-capable models (some APIs default
+ *   reasoning on); unknown APIs disable by omission.
  */
 const buildRequestOptions = (
   model: Model<Api>,
   config: NameConfig | undefined,
-): ModelsApiStreamOptions<Api> => {
-  const options: Record<string, unknown> = {};
+): ApiOptions => {
+  const options: StreamOptions = {};
   if (config?.temperature !== undefined) {
     options.temperature = config.temperature;
   }
 
-  const level: ConfigThinkingLevel = config?.thinking ?? "off";
-  if (!model.reasoning) {
-    return options as ModelsApiStreamOptions<Api>;
+  const level = clampThinkingLevel(model, config?.thinking ?? "off");
+  if (level === "off") {
+    if (!model.reasoning) {
+      return options;
+    }
+    switch (model.api) {
+      case "anthropic-messages":
+        return { ...options, thinkingEnabled: false };
+      case "google-generative-ai":
+      case "google-vertex":
+        return { ...options, thinking: { enabled: false } };
+      default:
+        // OpenAI-family reasoning models default reasoning on; the raw
+        // request path needs an explicit minimal effort to disable it.
+        return isOpenAiApi(model.api)
+          ? { ...options, reasoningEffort: "minimal" }
+          : options;
+    }
   }
 
   switch (model.api) {
-    case "anthropic-messages": {
-      if (level === "off") {
-        options.thinkingEnabled = false;
-      } else {
-        options.thinkingEnabled = true;
-        // Anthropic has no "minimal" effort
-        options.effort = level === "minimal" ? "low" : level;
-      }
-      break;
-    }
+    case "anthropic-messages":
+      // Anthropic has no "minimal" effort
+      return {
+        ...options,
+        thinkingEnabled: true,
+        effort: level === "minimal" ? "low" : level,
+      };
     case "google-generative-ai":
     case "google-vertex": {
-      options.thinking =
-        level === "off"
-          ? { enabled: false }
-          : {
-              enabled: true,
-              level:
-                level === "xhigh" || level === "max"
-                  ? "HIGH"
-                  : level.toUpperCase(),
-            };
-      break;
-    }
-    case "openai-responses":
-    case "openai-completions":
-    case "azure-openai-responses": {
-      options.reasoningEffort =
-        level === "off"
-          ? "minimal"
-          : level === "xhigh" || level === "max"
-            ? "high"
-            : level;
-      break;
+      // Respect model-specific level mappings (e.g. gemma-4: medium → HIGH)
+      const mapped = model.thinkingLevelMap?.[level];
+      const googleLevel = (
+        typeof mapped === "string" ? mapped : level
+      ).toUpperCase() as GoogleApiThinkingLevel;
+      return { ...options, thinking: { enabled: true, level: googleLevel } };
     }
     default:
-      break;
+      return isOpenAiApi(model.api)
+        ? {
+            ...options,
+            reasoningEffort:
+              level === "xhigh" || level === "max" ? "high" : level,
+          }
+        : options;
   }
-  return options as ModelsApiStreamOptions<Api>;
 };
 
 const generateSessionName = async (

@@ -28,8 +28,10 @@ Config file `~/.pi/agent/auto-session-name.json` pins the naming model and reque
 ```
 
 - `provider`, `model` — pin the naming model (see below).
-- `temperature` — sampling temperature passed to the naming request as-is. Omitted by default (provider default applies).
-- `thinking` — reasoning level for the naming request: `"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"`. Defaults to `"off"`.
+- `temperature` — sampling temperature passed to the naming request as-is. Omitted by default (provider default applies). Providers may drop it where they forbid it (Anthropic ignores it when thinking is enabled).
+- `thinking` — reasoning level for the naming request: `"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"`. Defaults to `"off"`. The level is clamped to what the model supports (model-specific level mappings are respected).
+
+The file is read at naming time, so edits apply on the next session — no restart. When a file is generated or repaired (see below), the rewrite is schema-normalizing: only `provider`, `model`, `temperature`, and `thinking` are kept, so any extra keys are dropped.
 
 If no config file exists, one is generated on first use, pinning the cheapest available model by input token cost, respecting session model scoping (`enabledModels` / `--models`); if none, the active session model is used. A config file with no usable `provider`/`model` — unparseable JSON, or missing/invalid fields — is likewise regenerated from the default pick (with a warning). A file with a valid `provider`/`model` is never overwritten: malformed `temperature` or `thinking` values are dropped and the file is rewritten without them (with a warning), keeping the configured model.
 
