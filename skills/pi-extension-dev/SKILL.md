@@ -179,6 +179,7 @@ ln -s ~/dev/pi-extensions/another-extension ~/.pi/agent/extensions/another-exten
 ```
 
 This gives you:
+
 - Full editor tooling (intellisense, linting, formatting) in the dev workspace
 - Only symlinked extensions load into pi — WIP extensions stay invisible
 - No tooling config pollution in the extensions directory
