@@ -16,6 +16,13 @@
  * built-in footer itself is never replaced.
  * Variant 2: `/opencode-go` (or `/opencode-go usage`) renders a usage table
  * widget above the editor, plus subcommands for setup and configuration.
+ * Variant 3: exhaustion failover across multiple OpenCode Go workspaces (each
+ * holds one subscription, one API key). When a request dies with a Go quota
+ * error the extension marks the current workspace exhausted in memory, checks
+ * the remaining configured workspaces' usage, and switches the provider API
+ * key (the `opencode-go` entry in pi's auth.json) to the first one under
+ * 100%. In-memory only — no reset timers, no failback. Setting the
+ * OPENCODE_GO_WORKSPACE_ID env var disables the whole workspace system.
  */
 
 import type {
@@ -39,8 +46,17 @@ const USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 const CONFIG_FILE = "opencode_go_usage_settings.json";
+const AUTH_FILE = "auth.json";
 const STATUS_KEY = "opencode-go";
 const WIDGET_KEY = "opencode-go";
+/** pi provider id whose auth.json entry this extension manages. */
+const PROVIDER_ID = "opencode-go";
+
+/**
+ * Subscription-quota errors (pi classifies these as non-retryable limits, so
+ * the turn fails fast). Transient upstream 429s never match and are ignored.
+ */
+const QUOTA_ERROR_PATTERN = /GoUsageLimitError|Monthly usage limit reached/i;
 
 /** Interval that checks the cache TTL. Fetches only happen when the TTL passed. */
 const TICK_MS = 30_000;
@@ -79,7 +95,18 @@ const WINDOW_KEYS: { key: string; period: Period }[] = [
   { key: "monthlyUsage", period: "monthly" },
 ];
 
+interface WorkspaceEntry {
+  id: string;
+  /** Go API key for this workspace's subscription. Empty = not stored. */
+  apiKey: string;
+}
+
 interface Config {
+  /** Configured workspaces and their API keys (failover candidates, in order). */
+  workspaces: WorkspaceEntry[];
+  /** Auto-switch to the next workspace when a quota error hits. */
+  failoverEnabled: boolean;
+  /** Active workspace: usage fetch target; select/failover keep it in sync. */
   workspaceId: string;
   /** Empty = unset. Stored normalized (ready-to-use `Cookie` header value). */
   authCookie: string;
@@ -90,6 +117,8 @@ interface Config {
 }
 
 const DEFAULT_CONFIG: Config = {
+  workspaces: [],
+  failoverEnabled: true,
   workspaceId: "",
   authCookie: "",
   footerEnabled: true,
@@ -97,6 +126,14 @@ const DEFAULT_CONFIG: Config = {
   footerCountdowns: false,
   refreshMinutes: 3,
 };
+
+/** Sub-actions of the `workspace` subcommand (also used for completions). */
+const WORKSPACE_ACTIONS: { value: string; description: string }[] = [
+  { value: "add", description: "add a workspace + its API key (prompts)" },
+  { value: "select", description: "switch the active workspace" },
+  { value: "list", description: "show configured workspaces" },
+  { value: "remove", description: "forget a workspace" },
+];
 
 /** One parsed usage window from the dashboard payload. */
 export interface UsageMeter {
@@ -116,6 +153,61 @@ export type FetchFailure =
   | { kind: "no-payload"; loginPage: boolean };
 
 // ---------------------------------------------------------------------------
+// pi auth.json (read/write the opencode-go entry only — never other providers)
+// ---------------------------------------------------------------------------
+
+function authJsonPath(): string {
+  return join(getAgentDir(), AUTH_FILE);
+}
+
+async function readProviderKey(providerId: string): Promise<string | null> {
+  try {
+    const data = JSON.parse(
+      await fs.readFile(authJsonPath(), "utf8"),
+    ) as Record<string, unknown>;
+    const entry = data[providerId];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry))
+      return null;
+    const e = entry as Record<string, unknown>;
+    if (e.type !== "api_key" || typeof e.key !== "string") return null;
+    const key = e.key.trim();
+    // Command values ("!…") cannot be copied into the extension config.
+    if (!key || key.startsWith("!")) return null;
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Replace only `providerId`'s credential in auth.json (read-merge-write so
+ * other providers are preserved) with an atomic tmp+rename at 0600.
+ */
+async function writeProviderKey(
+  providerId: string,
+  apiKey: string,
+): Promise<void> {
+  const path = authJsonPath();
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(await fs.readFile(path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  } catch {
+    data = {};
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
+  data[providerId] = { type: "api_key", key: apiKey };
+  const tmp = `${path}.tmp`;
+  await fs.mkdir(getAgentDir(), { recursive: true });
+  await fs.writeFile(tmp, JSON.stringify(data, null, 2) + "\n", {
+    mode: 0o600,
+  });
+  await fs.rename(tmp, path);
+}
+
+// ---------------------------------------------------------------------------
 // Config file (~/.pi/agent/opencode_go_usage_settings.json, mode 0600)
 // ---------------------------------------------------------------------------
 
@@ -131,6 +223,25 @@ function mergeConfig(raw: unknown): Config {
   if (typeof r.workspaceId === "string")
     config.workspaceId = r.workspaceId.trim();
   if (typeof r.authCookie === "string") config.authCookie = r.authCookie.trim();
+  if (typeof r.failoverEnabled === "boolean")
+    config.failoverEnabled = r.failoverEnabled;
+  if (Array.isArray(r.workspaces)) {
+    const entries: WorkspaceEntry[] = [];
+    for (const item of r.workspaces) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const e = item as Record<string, unknown>;
+      const id = typeof e.id === "string" ? normalizeWorkspaceId(e.id) : null;
+      if (!id) continue;
+      const apiKey = typeof e.apiKey === "string" ? e.apiKey.trim() : "";
+      const existing = entries.find((entry) => entry.id === id);
+      if (existing) {
+        if (apiKey) existing.apiKey = apiKey;
+      } else {
+        entries.push({ id, apiKey });
+      }
+    }
+    config.workspaces = entries;
+  }
   if (typeof r.footerEnabled === "boolean")
     config.footerEnabled = r.footerEnabled;
   if (Array.isArray(r.footerPeriods)) {
@@ -159,11 +270,49 @@ function mergeConfig(raw: unknown): Config {
 }
 
 async function loadConfig(): Promise<Config> {
+  let raw: unknown;
   try {
-    return mergeConfig(JSON.parse(await fs.readFile(configPath(), "utf8")));
+    raw = JSON.parse(await fs.readFile(configPath(), "utf8"));
   } catch {
-    return mergeConfig(undefined);
+    return mergeConfig(undefined); // missing or corrupt: defaults, no migration
   }
+  const config = mergeConfig(raw);
+  // One-shot migration from the flat pre-0.2.0 format: pull the existing
+  // opencode-go API key out of auth.json and pair it with the configured
+  // workspace so existing installs land hands-free with workspace A mapped.
+  if (!fileHasWorkspaces(raw) && (await migrateFlatConfig(raw, config))) {
+    try {
+      await saveConfig(config);
+    } catch (err) {
+      console.error("[opencode-go] could not save migrated config:", err);
+    }
+  }
+  return config;
+}
+
+function fileHasWorkspaces(raw: unknown): boolean {
+  return Boolean(
+    raw &&
+    typeof raw === "object" &&
+    !Array.isArray(raw) &&
+    "workspaces" in raw,
+  );
+}
+
+/** Returns true when the config was changed and should be persisted. */
+async function migrateFlatConfig(
+  raw: unknown,
+  config: Config,
+): Promise<boolean> {
+  if (config.workspaces.length > 0) return false;
+  const oldRawId = (raw as Record<string, unknown> | undefined)?.workspaceId;
+  const oldId =
+    typeof oldRawId === "string" ? normalizeWorkspaceId(oldRawId) : null;
+  if (!oldId) return false;
+  const key = await readProviderKey(PROVIDER_ID);
+  if (!key) return false;
+  config.workspaces = [{ id: oldId, apiKey: key }];
+  return true;
 }
 
 async function saveConfig(config: Config): Promise<void> {
@@ -210,6 +359,16 @@ function resolveCreds(config: Config): Credentials | null {
     ""
   ).trim();
   return workspaceId && authCookie ? { workspaceId, authCookie } : null;
+}
+
+/** OPENCODE_GO_WORKSPACE_ID pins a single workspace and opts out of the whole
+ * multi-workspace system: failover off, workspace commands refuse. */
+function workspacePinnedByEnv(): boolean {
+  return Boolean(process.env.OPENCODE_GO_WORKSPACE_ID);
+}
+
+function workspaceSystemEnabled(config: Config): boolean {
+  return config.failoverEnabled && !workspacePinnedByEnv();
 }
 
 // ---------------------------------------------------------------------------
@@ -466,6 +625,9 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
   let timer: ReturnType<typeof setInterval> | undefined;
   let ui: ExtensionUIContext | null = null;
   let hasUI = false;
+  /** Workspace ids marked exhausted this session (in-memory only, reset on
+   * restart / new session — no reset-timer tracking by design). */
+  const exhaustedWorkspaces = new Set<string>();
 
   // --- Refresh engine ---
 
@@ -619,8 +781,15 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
   function helpLines(theme: Theme | undefined): string[] {
     const creds = resolveCreds(config);
     const dim = (text: string) => (theme ? theme.fg("dim", text) : text);
+    const failoverState = workspacePinnedByEnv()
+      ? "off (env-pinned)"
+      : config.failoverEnabled
+        ? "on"
+        : "off";
     const status = [
       creds ? `connected to ${creds.workspaceId}` : "not configured",
+      `failover ${failoverState}`,
+      `${config.workspaces.length} workspace(s)`,
       `footer ${config.footerEnabled ? "on" : "off"}`,
       config.footerPeriods.length > 0
         ? config.footerPeriods.join("/")
@@ -630,7 +799,12 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
     ].join(" · ");
     const commands: [cmd: string, args: string, description: string][] = [
       ["usage", "", "show the usage table (default)"],
-      ["workspace-id", "<id|url>", "set the workspace id"],
+      ["workspace add", "", "add a workspace + its API key (prompts)"],
+      ["workspace select", "<id|#|url>", "switch the active workspace"],
+      ["workspace list", "", "show configured workspaces"],
+      ["workspace remove", "<id|#|url>", "forget a workspace"],
+      ["workspace-id", "<id|url>", "alias of workspace select"],
+      ["failover", "<on|off>", "auto-switch on quota exhaustion"],
       ["auth-cookie", "[value]", "set the auth cookie (no arg = prompt)"],
       ["footer", "<on|off>", "footer status line visibility"],
       [
@@ -640,7 +814,7 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
       ],
       ["footer-reset-timer", "<on|off>", "reset countdown timer in the footer"],
       ["refresh-interval", "<1-60>", "background refresh TTL (minutes)"],
-      ["disconnect", "", "forget workspace id + cookie"],
+      ["disconnect", "", "forget all workspaces + cookie"],
       ["close", "", "hide this panel"],
       ["help", "", "show commands + current config"],
     ];
@@ -686,13 +860,249 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
     }
   }
 
+  // --- Workspace management + exhaustion failover ---
+
+  function notifyCtx(
+    ctx: ExtensionContext,
+    message: string,
+    level: "info" | "warning" | "error",
+  ): void {
+    if (ctx.hasUI) ctx.ui.notify(message, level);
+    else console.log(`[opencode-go] ${message}`);
+  }
+
+  /** Env-pinned installs refuse the whole workspace system. */
+  function requireWorkspaceSystem(ctx: ExtensionCommandContext): boolean {
+    if (!workspacePinnedByEnv()) return true;
+    ctx.ui.notify(
+      "OPENCODE_GO_WORKSPACE_ID is set — the workspace system and failover are disabled. Unset it to use multiple workspaces.",
+      "error",
+    );
+    return false;
+  }
+
+  /** Resolve `id | 1-based index | dashboard URL` to a configured entry. */
+  function resolveWorkspaceRef(arg: string): WorkspaceEntry | null {
+    const trimmed = arg.trim();
+    if (!trimmed) return null;
+    if (/^\d+$/.test(trimmed)) {
+      return config.workspaces[Number(trimmed) - 1] ?? null;
+    }
+    const id = normalizeWorkspaceId(trimmed);
+    if (!id) return null;
+    return config.workspaces.find((ws) => ws.id === id) ?? null;
+  }
+
+  async function addWorkspace(
+    rest: string[],
+    ctx: ExtensionCommandContext,
+  ): Promise<void> {
+    let id: string | null = null;
+    let key: string;
+    if (rest.length > 0) {
+      // <id> <key> argument form (lands in session history — prompts are safer)
+      id = normalizeWorkspaceId(rest[0] ?? "");
+      key = rest.slice(1).join(" ").trim();
+      if (!id) {
+        ctx.ui.notify(
+          "Expected a wrk_… id or dashboard URL: /opencode-go workspace add <id|url> [api-key]",
+          "error",
+        );
+        return;
+      }
+      if (!key && ctx.hasUI) {
+        key =
+          (await ctx.ui.input(`API key for ${id}`, "OpenCode Go API key")) ??
+          "";
+      }
+    } else if (ctx.hasUI) {
+      const raw = await ctx.ui.input(
+        "OpenCode Go workspace",
+        "workspace id (wrk_…) or dashboard URL",
+      );
+      if (!raw) return; // cancelled
+      id = normalizeWorkspaceId(raw);
+      if (!id) {
+        ctx.ui.notify("That is not a wrk_… id or dashboard URL", "error");
+        return;
+      }
+      key =
+        (await ctx.ui.input(`API key for ${id}`, "OpenCode Go API key")) ?? "";
+    } else {
+      ctx.ui.notify(
+        "Pass id and key: /opencode-go workspace add <id|url> <api-key>",
+        "error",
+      );
+      return;
+    }
+    if (!id) return;
+    const existing = config.workspaces.find((ws) => ws.id === id);
+    if (existing) {
+      if (key) existing.apiKey = key.trim();
+      await saveConfig(config);
+      ctx.ui.notify(
+        key
+          ? `Workspace updated: ${id}`
+          : `Workspace kept: ${id} (no key entered)`,
+        "info",
+      );
+      return;
+    }
+    config.workspaces.push({ id, apiKey: key.trim() });
+    await saveConfig(config);
+    ctx.ui.notify(
+      key
+        ? `Workspace added: ${id}`
+        : `Workspace added without API key: ${id} (display-only until a key is set)`,
+      "info",
+    );
+  }
+
+  async function selectWorkspace(
+    entry: WorkspaceEntry,
+    ctx: ExtensionCommandContext,
+  ): Promise<void> {
+    config.workspaceId = entry.id;
+    exhaustedWorkspaces.delete(entry.id); // explicit intent beats the heuristic
+    meters = [];
+    lastFetchedAt = 0;
+    lastError = null;
+    if (entry.apiKey) {
+      await writeProviderKey(PROVIDER_ID, entry.apiKey);
+      await saveConfig(config);
+      renderFooter();
+      ctx.ui.notify(
+        `Active workspace: ${entry.id} — API key written to pi auth; usage refreshes next`,
+        "info",
+      );
+    } else {
+      await saveConfig(config);
+      renderFooter();
+      ctx.ui.notify(
+        `${entry.id} is active for usage display — no API key stored, provider auth untouched`,
+        "warning",
+      );
+    }
+    void refresh();
+  }
+
+  function workspaceListLines(theme: Theme | undefined): string[] {
+    const dim = (text: string) => (theme ? theme.fg("dim", text) : text);
+    const lines = [
+      theme
+        ? theme.fg("accent", "OpenCode Go — workspaces")
+        : "OpenCode Go — workspaces",
+    ];
+    if (config.workspaces.length === 0) {
+      lines.push("No workspaces configured.");
+      lines.push("Add one with /opencode-go workspace add");
+    } else {
+      config.workspaces.forEach((ws, i) => {
+        const bits = [
+          `${i + 1}. ${ws.id}`,
+          ws.apiKey ? `key …${ws.apiKey.slice(-4)}` : "no api key",
+        ];
+        if (ws.id === config.workspaceId) bits.push("← active");
+        if (exhaustedWorkspaces.has(ws.id))
+          bits.push("(exhausted this session)");
+        lines.push("  " + bits.join("  "));
+      });
+    }
+    const gate = workspacePinnedByEnv()
+      ? "disabled — OPENCODE_GO_WORKSPACE_ID is set"
+      : config.failoverEnabled
+        ? "on"
+        : "off";
+    lines.push(dim(`Failover: ${gate} · exhausted marks reset on restart`));
+    lines.push("/opencode-go close hides this panel");
+    return lines;
+  }
+
+  async function doFailover(ctx: ExtensionContext): Promise<void> {
+    if (!workspaceSystemEnabled(config)) return;
+    const current = config.workspaceId;
+    if (current) exhaustedWorkspaces.add(current);
+
+    const cookie = resolveCreds(config)?.authCookie ?? "";
+    const candidates = config.workspaces.filter(
+      (ws) => ws.apiKey && ws.id !== current && !exhaustedWorkspaces.has(ws.id),
+    );
+    if (candidates.length === 0) {
+      notifyCtx(
+        ctx,
+        config.workspaces.some((ws) => ws.apiKey)
+          ? "OpenCode Go: all workspaces exhausted — resend once a usage window resets"
+          : "OpenCode Go: usage limit hit and no other workspace has an API key — add one with /opencode-go workspace add",
+        "error",
+      );
+      return;
+    }
+    for (const ws of candidates) {
+      // Best-effort usage check via the dashboard cookie; on fetch failure
+      // switch anyway — the next real error re-drives the cascade.
+      if (cookie) {
+        try {
+          const candidateMeters = await fetchUsage(ws.id, cookie);
+          if (candidateMeters.some((meter) => meter.percent >= 100)) {
+            exhaustedWorkspaces.add(ws.id);
+            continue;
+          }
+        } catch {
+          // blind-switch
+        }
+      }
+      await writeProviderKey(PROVIDER_ID, ws.apiKey);
+      config.workspaceId = ws.id;
+      exhaustedWorkspaces.delete(ws.id);
+      await saveConfig(config);
+      meters = [];
+      lastFetchedAt = 0;
+      lastError = null;
+      renderFooter();
+      notifyCtx(
+        ctx,
+        `OpenCode Go: quota exhausted on ${current || "workspace"} — switched to ${ws.id}. Resend your message.`,
+        "info",
+      );
+      void refresh();
+      return;
+    }
+    notifyCtx(
+      ctx,
+      "OpenCode Go: all workspaces exhausted — resend once a usage window resets",
+      "error",
+    );
+  }
+
+  let failoverInFlight: Promise<void> | null = null;
+
+  function handleQuotaExhaustion(ctx: ExtensionContext): Promise<void> {
+    if (failoverInFlight) return failoverInFlight;
+    failoverInFlight = doFailover(ctx)
+      .catch((err) => {
+        console.error("[opencode-go] failover failed:", err);
+      })
+      .finally(() => {
+        failoverInFlight = null;
+      });
+    return failoverInFlight;
+  }
+
   // --- Command ---
 
   const SUBCOMMANDS: { value: string; description: string }[] = [
     { value: "usage", description: "show the usage table (default)" },
     {
+      value: "workspace",
+      description: "workspaces: add / select / list / remove",
+    },
+    {
       value: "workspace-id",
-      description: "set the workspace id (wrk_… or dashboard URL)",
+      description: "alias of workspace select (wrk_… or dashboard URL)",
+    },
+    {
+      value: "failover",
+      description: "auto-switch workspace on quota exhaustion on/off",
     },
     {
       value: "auth-cookie",
@@ -711,7 +1121,7 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
       value: "refresh-interval",
       description: "background refresh TTL in minutes (1-60)",
     },
-    { value: "disconnect", description: "forget workspace id + cookie" },
+    { value: "disconnect", description: "forget all workspaces + cookie" },
     { value: "close", description: "hide the usage/help panel" },
     { value: "help", description: "show commands + current config" },
   ];
@@ -735,17 +1145,39 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
       }));
     }
 
-    // Value position.
+    // Value position. tokenIndex = 0-based index of the token being typed.
+    const tokenIndex = trailingSpace ? parts.length : parts.length - 1;
     const sub = parts[0] ?? "";
-    const prefix = trailingSpace || parts.length < 2 ? "" : last;
-    let values: string[] = [];
-    if (sub === "footer" || sub === "footer-reset-timer")
-      values = ["on", "off"];
-    if (sub === "footer-stats")
-      values = ["5h", "weekly", "monthly", "all", "clear"];
+    const prefix = trailingSpace ? "" : last;
+    let values: { value: string; description?: string }[] = [];
+    if (tokenIndex === 1) {
+      if (
+        sub === "footer" ||
+        sub === "footer-reset-timer" ||
+        sub === "failover"
+      )
+        values = ["on", "off"].map((v) => ({ value: v }));
+      if (sub === "footer-stats")
+        values = ["5h", "weekly", "monthly", "all", "clear"].map((v) => ({
+          value: v,
+        }));
+      if (sub === "workspace") values = WORKSPACE_ACTIONS;
+    } else if (tokenIndex === 2 && sub === "workspace") {
+      if (parts[1] === "select" || parts[1] === "remove") {
+        values = config.workspaces.map((ws) => ({
+          value: ws.id,
+          description: ws.apiKey ? `key …${ws.apiKey.slice(-4)}` : "no api key",
+        }));
+      }
+    }
+    const head = parts.slice(0, tokenIndex).join(" ");
     return values
-      .filter((value) => value.startsWith(prefix))
-      .map((value) => ({ value: `${sub} ${value}`, label: value }));
+      .filter((v) => v.value.startsWith(prefix))
+      .map((v) => ({
+        value: head ? `${head} ${v.value}` : v.value,
+        label: v.value,
+        description: v.description,
+      }));
   }
 
   function parseOnOff(raw: string | undefined): boolean | null | "invalid" {
@@ -763,7 +1195,7 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
 
   pi.registerCommand("opencode-go", {
     description:
-      "usage · workspace-id · auth-cookie · footer · footer-stats · footer-reset-timer · refresh-interval · disconnect · close · help",
+      "usage · workspace · failover · workspace-id · auth-cookie · footer · footer-stats · footer-reset-timer · refresh-interval · disconnect · close · help",
     getArgumentCompletions: completions,
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       ui = ctx.ui;
@@ -779,7 +1211,68 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
             return;
           }
 
+          case "workspace": {
+            const action = (rest[0] ?? "").toLowerCase();
+            const actionRest = rest.slice(1);
+            switch (action) {
+              case "add":
+                if (!requireWorkspaceSystem(ctx)) return;
+                await addWorkspace(actionRest, ctx);
+                return;
+              case "select": {
+                if (!requireWorkspaceSystem(ctx)) return;
+                const entry = resolveWorkspaceRef(actionRest.join(" "));
+                if (!entry) {
+                  ctx.ui.notify(
+                    "Unknown workspace — add it first with /opencode-go workspace add",
+                    "error",
+                  );
+                  return;
+                }
+                await selectWorkspace(entry, ctx);
+                return;
+              }
+              case "list": {
+                showPanel(workspaceListLines(uiTheme(ctx.ui)), ctx);
+                return;
+              }
+              case "remove": {
+                if (!requireWorkspaceSystem(ctx)) return;
+                const entry = resolveWorkspaceRef(actionRest.join(" "));
+                if (!entry) {
+                  ctx.ui.notify(
+                    "Unknown workspace — see /opencode-go workspace list",
+                    "error",
+                  );
+                  return;
+                }
+                config.workspaces = config.workspaces.filter(
+                  (ws) => ws !== entry,
+                );
+                await saveConfig(config);
+                ctx.ui.notify(
+                  `Workspace removed: ${entry.id}${
+                    entry.id === config.workspaceId
+                      ? " (still the active workspace — usage display unchanged)"
+                      : ""
+                  }`,
+                  "info",
+                );
+                return;
+              }
+              default:
+                ctx.ui.notify(
+                  "Usage: /opencode-go workspace <add|select|list|remove>",
+                  "error",
+                );
+                return;
+            }
+          }
+
           case "workspace-id": {
+            // Legacy alias of workspace select; unknown ids get a display-only
+            // entry so the old "just display this workspace" behavior survives.
+            if (!requireWorkspaceSystem(ctx)) return;
             const id = normalizeWorkspaceId(rest.join(" "));
             if (!id) {
               ctx.ui.notify(
@@ -788,17 +1281,28 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
               );
               return;
             }
-            config.workspaceId = id;
-            await saveConfig(config);
-            if (process.env.OPENCODE_GO_WORKSPACE_ID) {
-              ctx.ui.notify(
-                `Saved ${id} — but OPENCODE_GO_WORKSPACE_ID is set and takes precedence`,
-                "warning",
-              );
-            } else {
-              ctx.ui.notify(`Workspace id saved: ${id}`, "info");
+            let entry = config.workspaces.find((ws) => ws.id === id);
+            if (!entry) {
+              entry = { id, apiKey: "" };
+              config.workspaces.push(entry);
             }
-            void refresh();
+            await selectWorkspace(entry, ctx);
+            return;
+          }
+
+          case "failover": {
+            if (!requireWorkspaceSystem(ctx)) return;
+            const parsed = parseOnOff(rest[0]);
+            if (parsed === "invalid") {
+              ctx.ui.notify("Usage: /opencode-go failover <on|off>", "error");
+              return;
+            }
+            config.failoverEnabled = parsed ?? !config.failoverEnabled;
+            await saveConfig(config);
+            ctx.ui.notify(
+              `Exhaustion failover ${config.failoverEnabled ? "enabled" : "disabled"}`,
+              "info",
+            );
             return;
           }
 
@@ -931,21 +1435,23 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
           }
 
           case "disconnect": {
+            config.workspaces = [];
             config.workspaceId = "";
             config.authCookie = "";
+            exhaustedWorkspaces.clear();
             await saveConfig(config);
             meters = [];
             lastError = null;
             lastFetchedAt = 0;
             renderFooter();
-            if (resolveCreds(config)) {
+            if (workspacePinnedByEnv() || process.env.OPENCODE_GO_AUTH_COOKIE) {
               ctx.ui.notify(
-                "Credentials cleared — OPENCODE_GO_* env vars still active",
+                "Workspaces, API keys, and cookie cleared — OPENCODE_GO_* env vars still active",
                 "warning",
               );
             } else {
               ctx.ui.notify(
-                "Credentials cleared (display settings kept)",
+                "Workspaces, API keys, and cookie cleared (display settings kept)",
                 "info",
               );
             }
@@ -1073,9 +1579,24 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
     installSubcommandAutocomplete(ctx);
     config = await loadConfig();
     await ensureConfigFile();
+    exhaustedWorkspaces.clear(); // per-session state, by design
     renderFooter(); // instant hint / previous state; fetch updates it
     restartTimer();
     void refresh(); // fire-and-forget: never block session startup
+  });
+
+  // Reactive exhaustion failover: pi classifies Go quota errors as
+  // non-retryable, so the turn fails fast — switch the key now and let the
+  // user resend onto the new workspace.
+  pi.on("agent_end", async (event, ctx: ExtensionContext) => {
+    for (let i = event.messages.length - 1; i >= 0; i--) {
+      const message = event.messages[i];
+      if (message.role !== "assistant") continue;
+      if (message.stopReason !== "error" || !message.errorMessage) continue;
+      if (!QUOTA_ERROR_PATTERN.test(message.errorMessage)) continue;
+      await handleQuotaExhaustion(ctx);
+      return;
+    }
   });
 
   pi.on("turn_end", async () => {
