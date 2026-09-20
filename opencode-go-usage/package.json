@@ -1,6 +1,6 @@
 {
   "name": "@tinysquid/pi-opencode-go-usage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenCode Go plan usage in pi: footer status line (5h/weekly/monthly) + /opencode-go usage table, scraped from the opencode.ai workspace dashboard",
   "type": "module",
   "license": "MIT",
@@ -17,6 +17,7 @@
   ],
   "files": [
     "opencode-go-usage.ts",
+    "src",
     "README.md",
     "docs"
   ],
