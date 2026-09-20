@@ -84,3 +84,17 @@ No issue tracker: **every change — features, fixes, chores, docs tweaks, anyth
    The PR body opens with a plain description of the change (no heading), then only the sections that apply: `## Tested`, `## Not Tested`, `## Before Merging`, `## After Merging`. If content fits none of them, propose a new section in the PR and add it to this list once approved.
 
 4. The user reviews and merges. For release PRs, merging is the publish approval (see Release process).
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in this repo's GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical role names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
