@@ -35,7 +35,7 @@ There is no build step: pi loads the `.ts` sources directly with Bun. There is n
 No automated tests exist for pi extensions. After any non-trivial change:
 
 1. `pnpm run check`
-2. Symlink the extension: `ln -sf $(pwd)/<name>/<name>.ts ~/.pi/agent/extensions/<name>.ts`
+2. Symlink the extension. Single-file extensions: `ln -sf $(pwd)/<name>/<name>.ts ~/.pi/agent/extensions/<name>.ts`. Multi-file extensions (with a `src/` or sibling modules): symlink the directory instead — `ln -sfn $(pwd)/<name> ~/.pi/agent/extensions/<name>` — because a symlinked single file resolves relative imports against the symlink's directory, not the file's real location.
 3. Restart pi in a scratch project and exercise the extension's features (commands, events, UI). For turn-event extensions (agent_end, tool events), a print-mode run is a cheap smoke test: `echo "prompt" | pi -p -e $(pwd)/<name>/<name>.ts`
 4. For release candidates, also dress-rehearse the installed form: `pi install $(pwd)/<name>` (loads via the package manifest, like a real install), then `pi remove` it afterwards
 

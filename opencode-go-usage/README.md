@@ -8,10 +8,10 @@ Shows OpenCode Go plan usage — rolling 5-hour, weekly, and monthly percentages
 pi install npm:@tinysquid/pi-opencode-go-usage
 ```
 
-For local development:
+For local development, symlink the extension directory (multi-file extensions must be loaded as a directory, not a single file):
 
 ```bash
-ln -s $(pwd)/opencode-go-usage/opencode-go-usage.ts ~/.pi/agent/extensions/opencode-go-usage.ts
+ln -sfn $(pwd)/opencode-go-usage ~/.pi/agent/extensions/opencode-go-usage
 ```
 
 ## Screenshots
