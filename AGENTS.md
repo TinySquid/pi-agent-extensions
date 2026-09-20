@@ -22,6 +22,10 @@ Package manager is **pnpm** (workspaces). Use pnpm for install, scripts, and pub
 
 There is no build step: pi loads the `.ts` sources directly with Bun. There is no test framework for pi extensions — testing is manual (see below).
 
+## Building an extension
+
+Read [`skills/pi-extension-dev/SKILL.md`](skills/pi-extension-dev/SKILL.md) before writing or modifying any extension code — it covers the architecture decision tree (extension vs skill vs custom tool), the pi docs/examples index, and common pitfalls.
+
 ## Extension code conventions
 
 - Import the extension API from `@earendil-works/pi-coding-agent` (`ExtensionAPI`, `ExtensionContext`, `SessionEntry`, etc.).
@@ -68,7 +72,7 @@ A release is a PR that bumps the version of one or more extension packages. **Th
 
 ## Git workflow
 
-No issue tracker: **every change — features, fixes, chores, docs tweaks, anything — happens on a branch and ships as a GitHub PR.** Never commit directly to `main`.
+Every change — features, fixes, chores, docs tweaks, anything — happens on a branch and ships as a GitHub PR. Never commit directly to `main`.
 
 1. Pick the branch:
    - Brand-new extension: `git checkout -b ext/<extension-name>`
@@ -84,3 +88,17 @@ No issue tracker: **every change — features, fixes, chores, docs tweaks, anyth
    The PR body opens with a plain description of the change (no heading), then only the sections that apply: `## Tested`, `## Not Tested`, `## Before Merging`, `## After Merging`. If content fits none of them, propose a new section in the PR and add it to this list once approved.
 
 4. The user reviews and merges. For release PRs, merging is the publish approval (see Release process).
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in this repo's GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical role names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
