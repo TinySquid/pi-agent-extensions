@@ -88,14 +88,18 @@ export interface UiRef {
   ui: import("@earendil-works/pi-coding-agent").ExtensionUIContext | null;
 }
 
-type OnOff = { ok: boolean | null } | { invalid: string };
+type ParsedOnOff = { ok: boolean | null } | { invalid: string };
 
-function parseOnOff(raw: string | undefined): OnOff {
+function parseOnOff(raw: string | undefined): ParsedOnOff {
   if (raw === undefined || raw === "") return { ok: null };
   const value = raw.toLowerCase();
   if (["on", "enabled", "true", "yes"].includes(value)) return { ok: true };
   if (["off", "disabled", "false", "no"].includes(value)) return { ok: false };
   return { invalid: value };
+}
+
+function footerPeriodsLabel(store: UsageStore): string {
+  return store.current.footerPeriods.join(", ") || "none";
 }
 
 /** Notify a save; a warning instead when an env var shadows the stored value. */
@@ -217,7 +221,7 @@ export function registerOpencodeGoCommand(
             const spec = rest.join(" ").trim().toLowerCase();
             if (!spec) {
               ctx.ui.notify(
-                `Footer periods: ${store.current.footerPeriods.join(", ") || "none"} — usage: /opencode-go footer-stats <5h|weekly|monthly|all|clear>`,
+                `Footer periods: ${footerPeriodsLabel(store)} — usage: /opencode-go footer-stats <5h|weekly|monthly|all|clear>`,
                 "info",
               );
               return;
@@ -238,7 +242,7 @@ export function registerOpencodeGoCommand(
               await store.setFooterPeriods(periods);
             }
             ctx.ui.notify(
-              `Footer periods: ${store.current.footerPeriods.join(", ") || "none"}`,
+              `Footer periods: ${footerPeriodsLabel(store)}`,
               "info",
             );
             return;

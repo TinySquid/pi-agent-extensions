@@ -18,9 +18,11 @@ export interface Config {
 export const DEFAULT_CONFIG: Config = {
   workspaceId: "",
   authCookie: "",
+
   footerEnabled: true,
   footerPeriods: [...PERIODS],
   footerCountdowns: false,
+
   refreshMinutes: 3,
 };
 
@@ -87,6 +89,7 @@ export async function loadConfig(): Promise<Config> {
 export async function saveConfig(config: Config): Promise<void> {
   const path = configPath();
   const tmp = `${path}.tmp`;
+
   await fs.mkdir(getAgentDir(), { recursive: true });
   await fs.writeFile(tmp, JSON.stringify(config, null, 2) + "\n", {
     mode: 0o600,
