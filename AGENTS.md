@@ -68,7 +68,7 @@ A release is a PR that bumps the version of one or more extension packages. **Th
 
 ## Git workflow
 
-No issue tracker: **every change — features, fixes, chores, docs tweaks, anything — happens on a branch and ships as a GitHub PR.** Never commit directly to `main`.
+Every change — features, fixes, chores, docs tweaks, anything — happens on a branch and ships as a GitHub PR. Never commit directly to `main`.
 
 1. Pick the branch:
    - Brand-new extension: `git checkout -b ext/<extension-name>`
