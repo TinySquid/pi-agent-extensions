@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # Pi Extension Development
 
+> **Working inside a project repo?** That repo's AGENTS.md wins over the generic workspace instructions below — use its package manager, check script, and PR workflow instead of a separate dev workspace and bare prettier.
+
 ## Phase 0: Understand the Use Case
 
 Before writing any code, interview the user to nail down what they're building. Ask:
@@ -106,7 +108,7 @@ The `read` tool can open these paths directly.
 
 Before writing from scratch, read at least one example that's close to what you're building. The pi project ships extensive examples:
 
-```
+```text
 @earendil-works/pi-coding-agent/examples/extensions/README.md
 ```
 
@@ -135,10 +137,6 @@ Use this index to find the right one:
 | Package with dependencies      | `with-deps/`                                                             |
 | Full plan mode (complex)       | `plan-mode/`                                                             |
 
-### Local Extensions
-
-These are live extensions in this pi setup: `~/.pi/agent/extensions/`
-
 ## Phase 3: Development Workflow
 
 ### Write the extension
@@ -159,7 +157,7 @@ export default function (pi: ExtensionAPI) {
 
 Instead, maintain a separate workspace for extension development:
 
-```
+```text
 ~/dev/pi-extensions/          # Development workspace
 ├── package.json               # Dependencies for all extensions
 ├── tsconfig.json              # Type checking, path aliases
