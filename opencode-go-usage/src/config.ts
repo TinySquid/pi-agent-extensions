@@ -107,8 +107,7 @@ export async function ensureConfigFile(): Promise<void> {
   }
 }
 
-// --- Credential resolution (env vars win over the config file) ---------------
-
+// env vars win over the config file.
 export interface Credentials {
   workspaceId: string;
   authCookie: string;

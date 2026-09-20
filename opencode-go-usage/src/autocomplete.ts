@@ -1,7 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-// --- Autocomplete hint: offer the subcommand list at the bare command ---
-//
 // pi queries argument completions only once a space follows the command
 // name. With exactly "/opencode-go" typed, it instead offers a single
 // "complete the command name" entry, and Tab just completes the name and

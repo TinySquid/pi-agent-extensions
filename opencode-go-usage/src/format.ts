@@ -40,9 +40,9 @@ export function bar(percent: number, width = 10): string {
   return "█".repeat(filled) + "░".repeat(width - filled);
 }
 
-// --- ANSI-safe text helpers -------------------------------------------------
-
 /** ANSI SGR escape sequence (foreground/background color resets). */
+// no-control-regex bans the \x1b escape in a regex string, so build the ESC
+// char at runtime instead.
 const ANSI_SGR_RE = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*m`, "g");
 
 /** Visible length of a string after stripping ANSI SGR escape sequences. */
@@ -55,8 +55,7 @@ export function padVisible(text: string, width: number): string {
   return text + " ".repeat(Math.max(0, width - visibleLength(text)));
 }
 
-// --- Theming (ctx.ui.theme exists at runtime but is not in the 0.84.x type defs) ---
-
+// ctx.ui.theme exists at runtime but is not in the 0.84.x type defs.
 export function uiTheme(ui: unknown): Theme | undefined {
   return (ui as { theme?: Theme }).theme;
 }

@@ -30,8 +30,6 @@ export class UsageStore {
     this.config = config;
   }
 
-  // --- Reads ---
-
   get current(): Readonly<Config> {
     return this.config;
   }
@@ -52,8 +50,6 @@ export class UsageStore {
   get fetchedAt(): number {
     return this.lastFetchedAt;
   }
-
-  // --- Mutations (validate → mutate → persist → notify) ---
 
   /** Adopt the persisted config loaded at session start (does not re-save). */
   setConfig(config: Config): void {
@@ -110,8 +106,6 @@ export class UsageStore {
     this.lastFetchedAt = 0;
     this.notify();
   }
-
-  // --- Refresh engine ---
 
   private async doFetch(): Promise<void> {
     const creds = resolveCreds(this.config);
@@ -172,8 +166,6 @@ export class UsageStore {
       }
     }, UsageStore.TICK_MS);
   }
-
-  // --- Reactivity ---
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
