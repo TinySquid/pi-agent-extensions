@@ -22,10 +22,6 @@ Package manager is **pnpm** (workspaces). Use pnpm for install, scripts, and pub
 
 There is no build step: pi loads the `.ts` sources directly with Bun. There is no test framework for pi extensions — testing is manual (see below).
 
-## Building an extension
-
-Read [`skills/pi-extension-dev/SKILL.md`](skills/pi-extension-dev/SKILL.md) before writing or modifying any extension code — it covers the architecture decision tree (extension vs skill vs custom tool), the pi docs/examples index, and common pitfalls.
-
 ## Extension code conventions
 
 - Import the extension API from `@earendil-works/pi-coding-agent` (`ExtensionAPI`, `ExtensionContext`, `SessionEntry`, etc.).
