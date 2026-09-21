@@ -26,7 +26,6 @@ export interface UsageMeter {
   percent: number;
   /** ISO timestamp of rollover, or null when the window is not open. */
   resetsAt: string | null;
-  status: "ok" | "error" | "unknown";
 }
 
 export type FetchFailure =
@@ -72,11 +71,6 @@ function readNumber(body: string, field: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-function readStatus(body: string): UsageMeter["status"] {
-  const value = /status\s*:\s*"([^"]*)"/.exec(body)?.[1];
-  return value === "ok" || value === "error" ? value : "unknown";
-}
-
 /** Parse the three usage windows out of the dashboard HTML. */
 export function parseWorkspaceHtml(
   html: string,
@@ -98,7 +92,6 @@ export function parseWorkspaceHtml(
         resetInSec !== null && resetInSec > 0
           ? new Date(now + resetInSec * 1000).toISOString()
           : null,
-      status: readStatus(body),
     });
   }
   return meters;

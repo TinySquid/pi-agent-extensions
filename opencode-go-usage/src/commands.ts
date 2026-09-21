@@ -7,9 +7,8 @@ import { uiTheme } from "./format.ts";
 import { closePanel, helpLines, showPanel, tableLines } from "./panel.ts";
 import {
   PERIODS,
-  PERIOD_ALIASES,
   completeSubcommandValues,
-  type Period,
+  parsePeriodList,
 } from "./periods.ts";
 import type { UsageStore } from "./state.ts";
 
@@ -87,15 +86,36 @@ export const SUBCOMMANDS: Subcommand[] = [
 /** Mutable UI holder shared with the composition root's footer subscription. */
 export interface UiRef {
   ui: import("@earendil-works/pi-coding-agent").ExtensionUIContext | null;
-  hasUI: boolean;
 }
 
-function parseOnOff(raw: string | undefined): boolean | null | "invalid" {
-  if (raw === undefined || raw === "") return null;
+type ParsedOnOff = { ok: boolean | null } | { invalid: string };
+
+function parseOnOff(raw: string | undefined): ParsedOnOff {
+  if (raw === undefined || raw === "") return { ok: null };
   const value = raw.toLowerCase();
-  if (["on", "enabled", "true", "yes"].includes(value)) return true;
-  if (["off", "disabled", "false", "no"].includes(value)) return false;
-  return "invalid";
+  if (["on", "enabled", "true", "yes"].includes(value)) return { ok: true };
+  if (["off", "disabled", "false", "no"].includes(value)) return { ok: false };
+  return { invalid: value };
+}
+
+function footerPeriodsLabel(store: UsageStore): string {
+  return store.current.footerPeriods.join(", ") || "none";
+}
+
+/** Notify a save; a warning instead when an env var shadows the stored value. */
+function notifySaved(
+  ctx: ExtensionCommandContext,
+  saved: string,
+  envVar: string,
+): void {
+  if (process.env[envVar]) {
+    ctx.ui.notify(
+      `${saved} — but ${envVar} is set and takes precedence`,
+      "warning",
+    );
+  } else {
+    ctx.ui.notify(saved, "info");
+  }
 }
 
 /** Argument completions for /opencode-go (pi replaces the whole prefix with `value`). */
@@ -128,7 +148,6 @@ export function registerOpencodeGoCommand(
     getArgumentCompletions: completions,
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       uiRef.ui = ctx.ui;
-      uiRef.hasUI = ctx.hasUI;
       const tokens = args.trim().split(/\s+/).filter(Boolean);
       const sub = tokens[0] ?? "usage";
       const rest = tokens.slice(1);
@@ -151,14 +170,11 @@ export function registerOpencodeGoCommand(
               return;
             }
             await store.setWorkspaceId(id);
-            if (process.env.OPENCODE_GO_WORKSPACE_ID) {
-              ctx.ui.notify(
-                `Saved ${id} — but OPENCODE_GO_WORKSPACE_ID is set and takes precedence`,
-                "warning",
-              );
-            } else {
-              ctx.ui.notify(`Workspace id saved: ${id}`, "info");
-            }
+            notifySaved(
+              ctx,
+              `Workspace id saved: ${id}`,
+              "OPENCODE_GO_WORKSPACE_ID",
+            );
             void store.refresh();
             return;
           }
@@ -182,25 +198,18 @@ export function registerOpencodeGoCommand(
             value = value.trim();
             if (!value) return;
             await store.setAuthCookie(normalizeAuthCookie(value));
-            if (process.env.OPENCODE_GO_AUTH_COOKIE) {
-              ctx.ui.notify(
-                "Cookie saved — but OPENCODE_GO_AUTH_COOKIE is set and takes precedence",
-                "warning",
-              );
-            } else {
-              ctx.ui.notify("Auth cookie saved", "info");
-            }
+            notifySaved(ctx, "Cookie saved", "OPENCODE_GO_AUTH_COOKIE");
             void store.refresh();
             return;
           }
 
           case "footer": {
             const parsed = parseOnOff(rest[0]);
-            if (parsed === "invalid") {
+            if ("invalid" in parsed) {
               ctx.ui.notify("Usage: /opencode-go footer <on|off>", "error");
               return;
             }
-            await store.setFooterEnabled(parsed);
+            await store.setFooterEnabled(parsed.ok);
             ctx.ui.notify(
               `Footer ${store.current.footerEnabled ? "enabled" : "disabled"}`,
               "info",
@@ -212,7 +221,7 @@ export function registerOpencodeGoCommand(
             const spec = rest.join(" ").trim().toLowerCase();
             if (!spec) {
               ctx.ui.notify(
-                `Footer periods: ${store.current.footerPeriods.join(", ") || "none"} — usage: /opencode-go footer-stats <5h|weekly|monthly|all|clear>`,
+                `Footer periods: ${footerPeriodsLabel(store)} — usage: /opencode-go footer-stats <5h|weekly|monthly|all|clear>`,
                 "info",
               );
               return;
@@ -222,32 +231,18 @@ export function registerOpencodeGoCommand(
             } else if (spec === "clear" || spec === "none") {
               await store.setFooterPeriods([]);
             } else {
-              const mapped: Period[] = [];
-              const bad: string[] = [];
-              for (const token of spec
-                .split(",")
-                .map((t) => t.trim())
-                .filter(Boolean)) {
-                const period = PERIOD_ALIASES[token];
-                if (period) {
-                  if (!mapped.includes(period)) mapped.push(period);
-                } else {
-                  bad.push(token);
-                }
-              }
-              if (bad.length > 0) {
+              const { periods, unknown } = parsePeriodList(spec);
+              if (unknown.length > 0) {
                 ctx.ui.notify(
-                  `Unknown period(s): ${bad.join(", ")} — valid: 5h, weekly, monthly, all, clear`,
+                  `Unknown period(s): ${unknown.join(", ")} — valid: 5h, weekly, monthly, all, clear`,
                   "error",
                 );
                 return;
               }
-              await store.setFooterPeriods(
-                PERIODS.filter((p) => mapped.includes(p)),
-              );
+              await store.setFooterPeriods(periods);
             }
             ctx.ui.notify(
-              `Footer periods: ${store.current.footerPeriods.join(", ") || "none"}`,
+              `Footer periods: ${footerPeriodsLabel(store)}`,
               "info",
             );
             return;
@@ -255,14 +250,14 @@ export function registerOpencodeGoCommand(
 
           case "footer-reset-timer": {
             const parsed = parseOnOff(rest[0]);
-            if (parsed === "invalid") {
+            if ("invalid" in parsed) {
               ctx.ui.notify(
                 "Usage: /opencode-go footer-reset-timer <on|off>",
                 "error",
               );
               return;
             }
-            await store.setFooterCountdowns(parsed);
+            await store.setFooterCountdowns(parsed.ok);
             ctx.ui.notify(
               `Footer reset timer ${store.current.footerCountdowns ? "on" : "off"}`,
               "info",

@@ -23,7 +23,7 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
     ...DEFAULT_CONFIG,
     footerPeriods: [...PERIODS],
   });
-  const uiRef: UiRef = { ui: null, hasUI: false };
+  const uiRef: UiRef = { ui: null };
   const installAutocomplete = createSubcommandAutocompleteInstaller(
     "opencode-go",
     () =>
@@ -40,17 +40,24 @@ export default function opencodeGoUsage(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx: ExtensionContext) => {
     uiRef.ui = ctx.ui;
-    uiRef.hasUI = ctx.hasUI;
+
     installAutocomplete(ctx);
+
     store.setConfig(await loadConfig());
     await ensureConfigFile();
-    renderFooter(store, ctx.ui); // instant hint / previous state; fetch updates it
+
+    // instant hint / previous state; fetch updates it
+    renderFooter(store, ctx.ui);
+
     store.startTimer();
-    void store.refresh(); // fire-and-forget: never block session startup
+
+    // initial pull as fire-and-forget to be non-blocking.
+    void store.refresh();
   });
 
   pi.on("turn_end", async () => {
-    void store.refresh(); // always: usage just changed
+    // we want to keep the store in-sync with usage.
+    void store.refresh();
   });
 
   pi.on("session_shutdown", () => {

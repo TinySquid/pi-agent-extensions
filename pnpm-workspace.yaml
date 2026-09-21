@@ -5,4 +5,13 @@ packages:
 
 allowBuilds:
   "@google/genai": false
+  esbuild: true
   protobufjs: false
+
+minimumReleaseAgeExclude:
+  - "@earendil-works/chord@0.86.1"
+  - "@earendil-works/pi-agent-core@0.86.1"
+  - "@earendil-works/pi-ai@0.86.1"
+  - "@earendil-works/pi-coding-agent@0.86.1"
+  - "@earendil-works/pi-telemetry@0.86.1"
+  - "@earendil-works/pi-tui@0.86.1"
