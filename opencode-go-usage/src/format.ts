@@ -55,7 +55,7 @@ export function padVisible(text: string, width: number): string {
   return text + " ".repeat(Math.max(0, width - visibleLength(text)));
 }
 
-// ctx.ui.theme exists at runtime but is not in the 0.84.x type defs.
+// ctx.ui.theme exists at runtime but is not in the type defs (checked at 0.86.1).
 export function uiTheme(ui: unknown): Theme | undefined {
   return (ui as { theme?: Theme }).theme;
 }
