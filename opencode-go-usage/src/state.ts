@@ -1,5 +1,5 @@
 import {
-  normalizeAuthCookie,
+  normalizeSessionCookie,
   normalizeWorkspaceId,
   resolveCreds,
   saveConfig,
@@ -64,8 +64,8 @@ export class UsageStore {
     this.notify();
   }
 
-  async setAuthCookie(rawCookie: string): Promise<void> {
-    this.config.authCookie = normalizeAuthCookie(rawCookie);
+  async setSessionCookie(rawCookie: string): Promise<void> {
+    this.config.sessionCookie = normalizeSessionCookie(rawCookie);
     await saveConfig(this.config);
     this.notify();
   }
@@ -99,7 +99,7 @@ export class UsageStore {
 
   async disconnect(): Promise<void> {
     this.config.workspaceId = "";
-    this.config.authCookie = "";
+    this.config.sessionCookie = "";
     await saveConfig(this.config);
     this.meters = [];
     this.lastError = null;
@@ -122,7 +122,7 @@ export class UsageStore {
       return;
     }
     try {
-      this.meters = await fetchUsage(workspaceId, creds.authCookie);
+      this.meters = await fetchUsage(workspaceId, creds.sessionCookie);
       this.lastFetchedAt = Date.now();
       this.lastError = null;
     } catch (err) {
