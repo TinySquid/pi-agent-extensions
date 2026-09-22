@@ -8,8 +8,10 @@
  *   x-org-id: <wrk_… org id>
  *
  * The response JSON carries `access.meters` with `limitMicroCents` /
- * `usedMicroCents` per window plus window start/reset timestamps. The
- * extension reports percentages and countdowns only (never dollar amounts).
+ * `usedMicroCents` per window plus window start/reset timestamps. The month
+ * meter has no resetsAt — the monthly reset is the billing period end
+ * (`access.endsAt`), which the console page also uses. The extension reports
+ * percentages and countdowns only (never dollar amounts).
  *
  *   "meters": {
  *     "fiveHour": { "resetsAt": "…", "limitMicroCents": "1200000000",
@@ -60,9 +62,13 @@ export function parseStatusPayload(payload: unknown): UsageMeter[] {
   if (typeof payload !== "object" || payload === null) return [];
   const access = (payload as Record<string, unknown>).access;
   if (typeof access !== "object" || access === null) return [];
-  const meters = (access as Record<string, unknown>).meters;
+  const a = access as Record<string, unknown>;
+  const meters = a.meters;
   if (typeof meters !== "object" || meters === null) return [];
   const record = meters as Record<string, unknown>;
+  // The month meter carries no resetsAt of its own — the console page derives
+  // its monthly reset date from the billing period end (access.endsAt).
+  const periodEnd = typeof a.endsAt === "string" && a.endsAt ? a.endsAt : null;
 
   const parsed: UsageMeter[] = [];
   for (const { key, period } of METER_KEYS) {
@@ -75,7 +81,7 @@ export function parseStatusPayload(payload: unknown): UsageMeter[] {
       continue;
     }
     const resetsAt =
-      typeof m.resetsAt === "string" && m.resetsAt ? m.resetsAt : null;
+      typeof m.resetsAt === "string" && m.resetsAt ? m.resetsAt : periodEnd;
     parsed.push({
       period,
       percent: Math.min(100, Math.max(0, (used / limit) * 100)),
