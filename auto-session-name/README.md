@@ -5,20 +5,20 @@
 
 > Never see `untitled-session` again — a cheap model names your [pi coding agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) sessions for you
 
-After the first turn, this extension takes your opening prompt, asks a small, configurable model to summarize it into a 3–8 word title, and sets it as the session name. Your session list goes from this:
+After the first turn, this extension takes your opening prompt, asks a small, configurable model to summarize it into a 3–8 word title, and sets it as the session name.
+
+Without it, pi's `/resume` picker falls back to showing each session's raw first prompt — fine for a one-liner, useless when the opening message is a pasted stack trace, a long spec, or a skill invocation, since you only see a truncated fragment:
 
 ```text
-untitled-session
-untitled-session
-untitled-session
+TypeError: Cannot read properties of undefi…   42 3h
+kitchen-sink Review the draft README and tell…  7 2d
 ```
 
-to this:
+With it, every session gets a short, searchable title instead:
 
 ```text
-Fix WebSocket reconnect race
-Migrate auth to passkeys
-Debug flaky Vitest snapshot
+Fix WebSocket reconnect race                   42 3h
+Debug flaky Vitest snapshot                     7 2d
 ```
 
 ## How it works
@@ -36,6 +36,7 @@ Debug flaky Vitest snapshot
 ```
 
 - **When it fires** — once per session, on `agent_end` after the first turn, and only if the session has no name yet. Skill invocations at session start are ignored; `/reload` re-runs the extension but the existing-name guard prevents a second naming run.
+- **Why a name** — named sessions are searchable in the `/resume` picker (and survive Ctrl+N's named-only filter), and the terminal title becomes `pi - <session name> - <cwd>` instead of just `pi - <cwd>`.
 - **Model pick** — uses the model pinned in the config file. Without a config, it picks the cheapest available model by input token cost (respecting session model scoping via `enabledModels` / `--models`), falling back to the active session model.
 - **Non-blocking** — in the interactive TUI, naming runs in the background so the prompt is never delayed. In one-shot modes (`-p`, `--json`), the turn ends slightly later while the name is generated.
 
