@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@tinysquid/pi-auto-session-name?style=flat-square)](https://www.npmjs.com/package/@tinysquid/pi-auto-session-name)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](https://github.com/TinySquid/pi-agent-extensions/blob/main/LICENSE)
 
-> Never see `untitled-session` again — a cheap model names your [pi coding agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) sessions for you
+> A cheap model turns your first prompt into a short, searchable name for every [pi coding agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) session
 
 After the first turn, this extension takes your opening prompt, asks a small, configurable model to summarize it into a 3–8 word title, and sets it as the session name.
 
