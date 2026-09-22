@@ -2,7 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
-import { normalizeAuthCookie, normalizeWorkspaceId } from "./config.ts";
+import { normalizeSessionCookie, normalizeWorkspaceId } from "./config.ts";
 import { uiTheme } from "./format.ts";
 import { closePanel, helpLines, showPanel, tableLines } from "./panel.ts";
 import {
@@ -34,10 +34,10 @@ export const SUBCOMMANDS: Subcommand[] = [
     helpDescription: "set the workspace id",
   },
   {
-    value: "auth-cookie",
+    value: "session-cookie",
     args: "[value]",
-    description: "set the auth cookie (no arg = prompt)",
-    helpDescription: "set the auth cookie (no arg = prompt)",
+    description: "set the session cookie (no arg = prompt)",
+    helpDescription: "set the session cookie",
   },
   {
     value: "footer",
@@ -144,7 +144,7 @@ export function registerOpencodeGoCommand(
 ): void {
   pi.registerCommand("opencode-go", {
     description:
-      "usage · workspace-id · auth-cookie · footer · footer-stats · footer-reset-timer · refresh-interval · disconnect · close · help",
+      "usage · workspace-id · session-cookie · footer · footer-stats · footer-reset-timer · refresh-interval · disconnect · close · help",
     getArgumentCompletions: completions,
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       uiRef.ui = ctx.ui;
@@ -179,26 +179,27 @@ export function registerOpencodeGoCommand(
             return;
           }
 
+          case "session-cookie":
           case "auth-cookie": {
             let value = rest.join(" ").trim();
             if (!value) {
               if (!ctx.hasUI) {
                 ctx.ui.notify(
-                  "Pass the cookie as an argument: /opencode-go auth-cookie <value>",
+                  "Pass the cookie as an argument: /opencode-go session-cookie <value>",
                   "error",
                 );
                 return;
               }
               value =
                 (await ctx.ui.input(
-                  "OpenCode Go auth cookie",
-                  "value of the auth cookie from opencode.ai (not masked)",
+                  "OpenCode Go session cookie",
+                  "value of the __Host-console_session cookie from opencode.ai (not masked)",
                 )) ?? "";
             }
             value = value.trim();
             if (!value) return;
-            await store.setAuthCookie(normalizeAuthCookie(value));
-            notifySaved(ctx, "Cookie saved", "OPENCODE_GO_AUTH_COOKIE");
+            await store.setSessionCookie(normalizeSessionCookie(value));
+            notifySaved(ctx, "Cookie saved", "OPENCODE_GO_SESSION_COOKIE");
             void store.refresh();
             return;
           }

@@ -28,10 +28,10 @@ export function tableLines(
     lines.push("Not configured. Set up with:");
     lines.push("  /opencode-go workspace-id <wrk_… or dashboard URL>");
     lines.push(
-      "  /opencode-go auth-cookie    (prompts; keeps the cookie out of session history)",
+      "  /opencode-go session-cookie (prompts; keeps the cookie out of session history)",
     );
     lines.push(
-      "Or export OPENCODE_GO_WORKSPACE_ID and OPENCODE_GO_AUTH_COOKIE.",
+      "Or export OPENCODE_GO_WORKSPACE_ID and OPENCODE_GO_SESSION_COOKIE.",
     );
     lines.push("/opencode-go close hides this panel");
     return lines;
@@ -97,7 +97,7 @@ export function helpLines(
   const commands: [cmd: string, args: string, description: string][] = [
     ["usage", "", "show the usage table (default)"],
     ["workspace-id", "<id|url>", "set the workspace id"],
-    ["auth-cookie", "[value]", "set the auth cookie (no arg = prompt)"],
+    ["session-cookie", "[value]", "set the session cookie (no arg = prompt)"],
     ["footer", "<on|off>", "footer status line visibility"],
     [
       "footer-stats",
@@ -123,7 +123,7 @@ export function helpLines(
     }),
     dim(`Status: ${status}`),
     dim(`Config: ${configPath()}`),
-    dim("Env overrides: OPENCODE_GO_WORKSPACE_ID, OPENCODE_GO_AUTH_COOKIE"),
+    dim("Env overrides: OPENCODE_GO_WORKSPACE_ID, OPENCODE_GO_SESSION_COOKIE"),
     "/opencode-go close hides this panel",
   ];
 }

@@ -7,8 +7,8 @@ const CONFIG_FILE = "opencode_go_usage_settings.json";
 
 export interface Config {
   workspaceId: string;
-  /** Empty = unset. Stored normalized (ready-to-use `Cookie` header value). */
-  authCookie: string;
+  /** Empty = unset. Stored normalized (bare `st_…` session id). */
+  sessionCookie: string;
   footerEnabled: boolean;
   footerPeriods: Period[];
   footerCountdowns: boolean;
@@ -17,7 +17,7 @@ export interface Config {
 
 export const DEFAULT_CONFIG: Config = {
   workspaceId: "",
-  authCookie: "",
+  sessionCookie: "",
 
   footerEnabled: true,
   footerPeriods: [...PERIODS],
@@ -33,16 +33,21 @@ export function normalizeWorkspaceId(raw: string): string | null {
 }
 
 /**
- * Normalize user-provided auth into a ready-to-use `Cookie` header value.
- * Accepted: bare cookie value (`Fe26…`), `auth=…` pair, full multi-pair
- * header (`auth=x; other=y`), or a line prefixed with `Cookie:`.
+ * Normalize user-provided session into a bare `st_…` session id.
+ * Accepted: bare value (`st_…`), `__Host-console_session=…` pair, or a full
+ * `Cookie:` header line containing the pair.
  */
-export function normalizeAuthCookie(raw: string): string {
-  let value = raw.trim();
-  value = value.replace(/^cookie:\s*/i, "").trim();
-  value = value.replace(/;\s*$/, "").trim();
-  if (/^[A-Za-z0-9_-]+=.+/.test(value)) return value;
-  return `auth=${value}`;
+export function normalizeSessionCookie(raw: string): string {
+  const value = raw
+    .trim()
+    .replace(/^cookie:\s*/i, "")
+    .trim();
+  return normalizeSessionId(value) ?? value;
+}
+
+function normalizeSessionId(value: string): string | null {
+  const match = value.match(/st_[A-Za-z0-9-]+/);
+  return match ? match[0] : null;
 }
 
 export function configPath(): string {
@@ -56,7 +61,13 @@ function mergeConfig(raw: unknown): Config {
   const r = raw as Record<string, unknown>;
   if (typeof r.workspaceId === "string")
     config.workspaceId = r.workspaceId.trim();
-  if (typeof r.authCookie === "string") config.authCookie = r.authCookie.trim();
+  if (typeof r.sessionCookie === "string")
+    config.sessionCookie = r.sessionCookie.trim();
+  // Migration: pre-0.2.0 configs stored the old `auth` cookie under
+  // `authCookie`. Its value is useless against the new API, but keep the
+  // workspace id so the user only has to re-enter the session.
+  else if (typeof r.authCookie === "string")
+    config.sessionCookie = r.authCookie.trim();
   if (typeof r.footerEnabled === "boolean")
     config.footerEnabled = r.footerEnabled;
   if (Array.isArray(r.footerPeriods)) {
@@ -113,7 +124,7 @@ export async function ensureConfigFile(): Promise<void> {
 // env vars win over the config file.
 export interface Credentials {
   workspaceId: string;
-  authCookie: string;
+  sessionCookie: string;
 }
 
 export function resolveCreds(config: Config): Credentials | null {
@@ -122,10 +133,10 @@ export function resolveCreds(config: Config): Credentials | null {
     config.workspaceId ??
     ""
   ).trim();
-  const authCookie = (
-    process.env.OPENCODE_GO_AUTH_COOKIE ??
-    config.authCookie ??
+  const sessionCookie = (
+    process.env.OPENCODE_GO_SESSION_COOKIE ??
+    config.sessionCookie ??
     ""
   ).trim();
-  return workspaceId && authCookie ? { workspaceId, authCookie } : null;
+  return workspaceId && sessionCookie ? { workspaceId, sessionCookie } : null;
 }

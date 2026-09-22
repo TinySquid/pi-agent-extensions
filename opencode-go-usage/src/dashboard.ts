@@ -1,25 +1,32 @@
 /**
- * Dashboard fetch + parse.
+ * API fetch + parse.
  *
- * opencode.ai publishes no usage API and serves no /api/*. The
- * /workspace/<wrk_…>/go page is a SolidStart app that serializes the resolved
- * values straight into the delivered HTML:
+ * opencode.ai now exposes a usage API at `/console/api/go/status`. The route
+ * is served by the console backend and requires:
  *
- *   rollingUsage:$R[12]={status:"ok",resetInSec:17400,usagePercent:42}
+ *   Cookie: __Host-console_session=st_…
+ *   x-org-id: <wrk_… org id>
  *
- * The page is fetched with the browser `auth` cookie and the percentages +
- * reset times are read out of the markup. Percentages and countdowns only —
- * the page carries no dollar amounts.
+ * The response JSON carries `access.meters` with `limitMicroCents` /
+ * `usedMicroCents` per window plus window start/reset timestamps. The
+ * extension reports percentages and countdowns only (never dollar amounts).
+ *
+ *   "meters": {
+ *     "fiveHour": { "resetsAt": "…", "limitMicroCents": "1200000000",
+ *                   "usedMicroCents": "1138760", … },
+ *     "week":     { … }, "month": { … }
+ *   }
  */
 
-import { normalizeAuthCookie, normalizeWorkspaceId } from "./config.ts";
+import { normalizeWorkspaceId } from "./config.ts";
 
 const ORIGIN = "https://opencode.ai";
+const STATUS_PATH = "/console/api/go/status";
 const REQUEST_TIMEOUT_MS = 20_000;
 const USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-/** One parsed usage window from the dashboard payload. */
+/** One parsed usage window from the status payload. */
 export interface UsageMeter {
   period: import("./periods.ts").Period;
   /** 0–100, clamped. May carry decimals (0.7 means 0.7%). */
@@ -33,89 +40,68 @@ export type FetchFailure =
   | { kind: "network"; detail: string }
   | { kind: "unauthorized" }
   | { kind: "http"; status: number }
-  | { kind: "no-payload"; loginPage: boolean };
+  | { kind: "no-payload" };
 
-/** Window keys as they appear in the dashboard HTML hydration payload. */
-const WINDOW_KEYS: { key: string; period: UsageMeter["period"] }[] = [
-  { key: "rollingUsage", period: "5h" },
-  { key: "weeklyUsage", period: "weekly" },
-  { key: "monthlyUsage", period: "monthly" },
+/** Meter key in the response → canonical period. */
+const METER_KEYS: { key: string; period: UsageMeter["period"] }[] = [
+  { key: "fiveHour", period: "5h" },
+  { key: "week", period: "weekly" },
+  { key: "month", period: "monthly" },
 ];
 
-function workspaceUrl(workspaceId: string, origin: string): string {
-  return `${origin.replace(/\/+$/, "")}/workspace/${encodeURIComponent(workspaceId)}/go`;
+/** Extract a `st_…` session id from a bare value or a `Cookie:` header line. */
+export function normalizeSessionCookie(raw: string): string | null {
+  const match = raw.match(/st_[A-Za-z0-9-]+/);
+  return match ? match[0] : null;
 }
 
-function scriptBodies(html: string): string {
-  const bodies: string[] = [];
-  for (const match of html.matchAll(
-    /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi,
-  )) {
-    bodies.push(match[1] ?? "");
-  }
-  return bodies.join("\n");
-}
+/** Parse the three usage windows out of the status JSON. */
+export function parseStatusPayload(payload: unknown): UsageMeter[] {
+  if (typeof payload !== "object" || payload === null) return [];
+  const access = (payload as Record<string, unknown>).access;
+  if (typeof access !== "object" || access === null) return [];
+  const meters = (access as Record<string, unknown>).meters;
+  if (typeof meters !== "object" || meters === null) return [];
+  const record = meters as Record<string, unknown>;
 
-function findObjectBody(haystack: string, key: string): string | null {
-  // SolidStart hydration format: key:$R[N]={...} — also tolerate key:{...} and key={...}
-  const pattern = new RegExp(
-    `${key}(?:\\s*:\\s*(?:\\$R\\[\\d+\\]\\s*=?)?|\\s*=)?\\s*\\{([^{}]*)\\}`,
-  );
-  return pattern.exec(haystack)?.[1] ?? null;
-}
-
-function readNumber(body: string, field: string): number | null {
-  const match = new RegExp(`${field}\\s*:\\s*(-?\\d+(?:\\.\\d+)?)`).exec(body);
-  if (!match) return null;
-  const value = Number(match[1]);
-  return Number.isFinite(value) ? value : null;
-}
-
-/** Parse the three usage windows out of the dashboard HTML. */
-export function parseWorkspaceHtml(
-  html: string,
-  now = Date.now(),
-): UsageMeter[] {
-  const haystack = scriptBodies(html) || html;
-  const meters: UsageMeter[] = [];
-  for (const { key, period } of WINDOW_KEYS) {
-    const body = findObjectBody(haystack, key);
-    if (body === null) continue;
-    const percent = readNumber(body, "usagePercent");
-    if (percent === null) continue;
-    const resetInSec =
-      readNumber(body, "resetInSec") ?? readNumber(body, "resetsInSeconds");
-    meters.push({
+  const parsed: UsageMeter[] = [];
+  for (const { key, period } of METER_KEYS) {
+    const meter = record[key];
+    if (typeof meter !== "object" || meter === null) continue;
+    const m = meter as Record<string, unknown>;
+    const limit = Number(m.limitMicroCents);
+    const used = Number(m.usedMicroCents);
+    if (!Number.isFinite(limit) || limit <= 0 || !Number.isFinite(used)) {
+      continue;
+    }
+    const resetsAt =
+      typeof m.resetsAt === "string" && m.resetsAt ? m.resetsAt : null;
+    parsed.push({
       period,
-      percent: Math.min(100, Math.max(0, percent)),
-      resetsAt:
-        resetInSec !== null && resetInSec > 0
-          ? new Date(now + resetInSec * 1000).toISOString()
-          : null,
+      percent: Math.min(100, Math.max(0, (used / limit) * 100)),
+      resetsAt,
     });
   }
-  return meters;
+  return parsed;
 }
 
-/** Fetch the dashboard page and parse it. Throws FetchFailure on any problem. */
+/** Fetch the status endpoint and parse it. Throws FetchFailure on any problem. */
 export async function fetchUsage(
   workspaceId: string,
-  authCookie: string,
+  sessionCookie: string,
   origin = ORIGIN,
 ): Promise<UsageMeter[]> {
-  const url = workspaceUrl(
-    normalizeWorkspaceId(workspaceId) ?? workspaceId,
-    origin,
-  );
+  const orgId = normalizeWorkspaceId(workspaceId) ?? workspaceId;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await fetch(`${origin}${STATUS_PATH}`, {
       headers: {
-        Cookie: normalizeAuthCookie(authCookie),
+        Cookie: `__Host-console_session=${normalizeSessionCookie(sessionCookie) ?? sessionCookie}`,
+        "x-org-id": orgId,
         "User-Agent": USER_AGENT,
-        Accept: "text/html,application/xhtml+xml",
+        Accept: "application/json",
       },
       signal: controller.signal,
       redirect: "manual",
@@ -132,24 +118,24 @@ export async function fetchUsage(
     clearTimeout(timer);
   }
 
-  if (response.status >= 300 && response.status < 400) {
-    const location = response.headers.get("location") ?? "";
-    if (/auth|login|sign-?in/i.test(location)) {
-      throw { kind: "unauthorized" } as FetchFailure;
-    }
-    throw { kind: "http", status: response.status } as FetchFailure;
-  }
   if (response.status === 401 || response.status === 403) {
     throw { kind: "unauthorized" } as FetchFailure;
   }
   if (!response.ok)
     throw { kind: "http", status: response.status } as FetchFailure;
 
-  const html = await response.text();
-  const meters = parseWorkspaceHtml(html);
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw { kind: "no-payload" } as FetchFailure;
+  }
+  const meters = parseStatusPayload(payload);
   if (meters.length === 0) {
-    const loginPage = /\/auth\/authorize|sign\s?in to opencode/i.test(html);
-    throw { kind: "no-payload", loginPage } as FetchFailure;
+    // A 200 that parses but carries no meters means the auth shape is wrong
+    // (e.g. wrong cookie) or the payload schema changed — both are auth-shaped
+    // from the user's perspective.
+    throw { kind: "unauthorized" } as FetchFailure;
   }
   return meters;
 }
@@ -162,13 +148,11 @@ export function describeFailure(failure: unknown): string {
     case "network":
       return `network error: ${f.detail}`;
     case "unauthorized":
-      return "cookie expired — set a fresh one with /opencode-go auth-cookie";
+      return "session expired — set a fresh one with /opencode-go session-cookie";
     case "http":
       return `HTTP ${f.status}`;
     case "no-payload":
-      return f.loginPage
-        ? "cookie expired — set a fresh one with /opencode-go auth-cookie"
-        : "no usage data on page — opencode.ai markup may have changed";
+      return "no usage data in response — opencode.ai API may have changed";
     default:
       return failure instanceof Error ? failure.message : String(failure);
   }

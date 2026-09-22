@@ -1,15 +1,14 @@
 /**
  * OpenCode Go usage — footer status line + usage table for the OpenCode Go plan.
  *
- * opencode.ai publishes no usage API and serves no /api/*. The
- * /workspace/<wrk_…>/go page is a SolidStart app that serializes the resolved
- * values straight into the delivered HTML:
+ * Data comes from opencode.ai's console API:
  *
- *   rollingUsage:$R[12]={status:"ok",resetInSec:17400,usagePercent:42}
+ *   GET https://opencode.ai/console/api/go/status
+ *   Cookie: __Host-console_session=st_…
+ *   x-org-id: <wrk_… org id>
  *
- * This extension fetches that page with the browser `auth` cookie and reads
- * the percentages + reset times out of the markup. It reports percentages and
- * countdowns only — the page carries no dollar amounts.
+ * The response carries `access.meters` with per-window limits, usage, and
+ * reset timestamps. The extension reports percentages and countdowns only.
  */
 
 export { default } from "./src/extension.ts";
