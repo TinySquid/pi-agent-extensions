@@ -16,10 +16,6 @@ import type {
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const ROOT_MARKERS = [
   ".git",
   "AGENTS.md",
@@ -44,10 +40,6 @@ Drop: articles (a/an/the), filler (just/really/basically/actually/simply), pleas
 Pattern: [thing] [action] [reason].
 One line per entry. No preamble. No explanation.`;
 
-// ---------------------------------------------------------------------------
-// Root Detection
-// ---------------------------------------------------------------------------
-
 function findProjectRoot(cwd: string): string | null {
   const root = resolve("/");
   let dir = resolve(cwd);
@@ -58,6 +50,7 @@ function findProjectRoot(cwd: string): string | null {
         return dir;
       }
     }
+
     if (dir === root) break;
 
     const parent = resolve(dir, "..");
@@ -68,27 +61,22 @@ function findProjectRoot(cwd: string): string | null {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// File I/O
-// ---------------------------------------------------------------------------
-
 function readMemoryFile(root: string): string | null {
   const path = resolve(root, MEMORY_FILE);
+
   if (!existsSync(path)) return null;
   return readFileSync(path, "utf8").trim();
 }
 
 function writeMemoryFile(root: string, content: string): void {
   const path = resolve(root, MEMORY_FILE);
+
   writeFileSync(path, content + "\n", "utf8");
 }
 
-// ---------------------------------------------------------------------------
-// Section Parsing / Rendering
-// ---------------------------------------------------------------------------
-
 function parseSections(content: string): Map<SectionName, string[]> {
   const sections = new Map<SectionName, string[]>();
+
   for (const name of SECTIONS) {
     sections.set(name, []);
   }
@@ -108,6 +96,7 @@ function parseSections(content: string): Map<SectionName, string[]> {
         continue;
       }
     }
+
     if (currentSection && trimmed && !trimmed.startsWith("#")) {
       const entry = trimmed.replace(/^[-*•]\s+/, "").trim();
       if (entry) {
@@ -121,9 +110,13 @@ function parseSections(content: string): Map<SectionName, string[]> {
 
 function renderSections(sections: Map<SectionName, string[]>): string {
   const parts: string[] = [];
+
   for (const name of SECTIONS) {
+    // "_none_" is the empty-section sentinel the extraction and compression
+    // prompts tell the model to emit; changing it means changing those strings
     const entries = sections.get(name)!.filter((e) => e !== "_none_");
     parts.push(`## ${name}\n`);
+
     if (entries.length === 0) {
       parts.push("\n");
     } else {
@@ -135,10 +128,6 @@ function renderSections(sections: Map<SectionName, string[]>): string {
   }
   return parts.join("");
 }
-
-// ---------------------------------------------------------------------------
-// Smart Merge
-// ---------------------------------------------------------------------------
 
 function normalizeForComparison(text: string): string {
   return text
@@ -155,20 +144,22 @@ function isDuplicate(newEntry: string, existingEntries: string[]): boolean {
     const normExisting = normalizeForComparison(existing);
     if (!normExisting) continue;
 
-    // Substring check
+    // model output paraphrases entries between sessions, so match fuzzily:
+    // substring containment or >70% shared words counts as a duplicate
     if (norm.includes(normExisting) || normExisting.includes(norm)) {
       return true;
     }
 
-    // Word overlap check
     const newWords = new Set(norm.split(/\s+/));
     const existingWords = new Set(normExisting.split(/\s+/));
     if (newWords.size === 0 || existingWords.size === 0) continue;
 
     let overlap = 0;
+
     for (const word of newWords) {
       if (existingWords.has(word)) overlap++;
     }
+
     const ratio = overlap / Math.min(newWords.size, existingWords.size);
     if (ratio > 0.7) return true;
   }
@@ -194,6 +185,7 @@ function smartMerge(
         if (!updateText) continue;
 
         let replaced = false;
+
         for (let i = 0; i < existingEntries.length; i++) {
           if (isDuplicate(updateText, [existingEntries[i]])) {
             existingEntries[i] = updateText;
@@ -201,6 +193,7 @@ function smartMerge(
             break;
           }
         }
+
         if (!replaced && !isDuplicate(updateText, existingEntries)) {
           existingEntries.push(updateText);
         }
@@ -217,21 +210,20 @@ function smartMerge(
   return merged;
 }
 
-// ---------------------------------------------------------------------------
-// Conversation Extraction
-// ---------------------------------------------------------------------------
-
 type ContentBlock = { type?: string; text?: string };
 
 function extractText(content: unknown): string[] {
   if (typeof content === "string") return [content];
   if (!Array.isArray(content)) return [];
+
   const parts: string[] = [];
+
   for (const block of content as ContentBlock[]) {
     if (block?.type === "text" && typeof block.text === "string") {
       parts.push(block.text);
     }
   }
+
   return parts;
 }
 
@@ -257,10 +249,6 @@ function buildConversationText(entries: SessionEntry[]): string {
 
   return parts.join("\n\n");
 }
-
-// ---------------------------------------------------------------------------
-// LLM Helper
-// ---------------------------------------------------------------------------
 
 async function callModel(
   ctx: ExtensionContext,
@@ -293,15 +281,9 @@ async function callModel(
     .trim();
 }
 
-// ---------------------------------------------------------------------------
-// Extension
-// ---------------------------------------------------------------------------
-
 export default function (pi: ExtensionAPI) {
   let cachedMemory: string | null = null;
   let projectRoot: string | null = null;
-
-  // --- Session lifecycle ---
 
   pi.on("session_start", async (_event, ctx) => {
     projectRoot = findProjectRoot(ctx.cwd);
@@ -316,13 +298,12 @@ export default function (pi: ExtensionAPI) {
     };
   });
 
-  // --- /remember command ---
-
   pi.registerCommand("remember", {
     description:
       "Summarize session into MEMORY.md (decisions, preferences, lessons)",
     handler: async (_args, ctx) => {
       const root = projectRoot ?? findProjectRoot(ctx.cwd);
+
       if (!root) {
         ctx.ui.notify("No project root found", "error");
         return;
@@ -333,9 +314,9 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // Gather conversation
       const branch = ctx.sessionManager.getBranch();
       const conversationText = buildConversationText(branch);
+
       if (!conversationText.trim()) {
         ctx.ui.notify("No conversation to remember", "warning");
         return;
@@ -345,7 +326,6 @@ export default function (pi: ExtensionAPI) {
 
       const existingMemory = readMemoryFile(root) ?? "";
 
-      // --- Extraction ---
       const extractPrompt = [
         "Extract key decisions (not implementation details), preferences, and lessons from this session.",
         "Output ONLY new info not already in existing memory.",
@@ -377,13 +357,11 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // Parse + merge
       const existingSections = parseSections(existingMemory);
       const incomingSections = parseSections(extracted);
       const merged = smartMerge(existingSections, incomingSections);
       let rendered = renderSections(merged);
 
-      // --- Compression if over limit ---
       const lineCount = rendered.split("\n").length;
       if (lineCount > MAX_LINES) {
         ctx.ui.notify(`Memory at ${lineCount} lines, compressing...`, "info");
@@ -430,7 +408,6 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      // --- Write ---
       writeMemoryFile(root, rendered);
       cachedMemory = rendered.trim();
       projectRoot = root;
