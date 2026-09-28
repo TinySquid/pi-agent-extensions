@@ -21,7 +21,7 @@ export function tableLines(
   theme: Theme | undefined,
 ): string[] {
   const creds = store.credentials;
-  const title = `OpenCode Go Usage${creds ? ` — ${creds.workspaceId}` : ""}`;
+  const title = `OpenCode Go Usage${creds ? ` (${creds.workspaceId})` : ""}`;
   const lines: string[] = [theme ? theme.fg("accent", title) : title];
 
   if (!creds) {
@@ -36,6 +36,7 @@ export function tableLines(
     lines.push("/opencode-go close hides this panel");
     return lines;
   }
+
   const meters = store.usage;
   if (meters.length === 0) {
     const lastError = store.error;
@@ -72,7 +73,7 @@ export function tableLines(
     lines.push(`| ${cells.join(" | ")} |`);
   }
   lines.push(border);
-  if (store.error) lines.push(`Stale — ${store.error}`);
+  if (store.error) lines.push(`Stale: ${store.error}`);
   lines.push("/opencode-go close hides this panel");
   return lines;
 }
@@ -115,8 +116,8 @@ export function helpLines(
   );
   return [
     theme
-      ? theme.fg("accent", "OpenCode Go — commands")
-      : "OpenCode Go — commands",
+      ? theme.fg("accent", "OpenCode Go: commands")
+      : "OpenCode Go: commands",
     ...commands.map(([cmd, args, description]) => {
       const left = args ? `${cmd} ${args}` : cmd;
       return `  ${left.padEnd(commandWidth)}  ${description}`;
@@ -148,7 +149,7 @@ export function showPanel(lines: string[], ctx: ExtensionCommandContext): void {
       { placement: "aboveEditor" },
     );
   } else {
-    // RPC mode supports string arrays only — factory functions are ignored.
+    // RPC mode supports string arrays only and ignores factory functions.
     ctx.ui.setWidget(WIDGET_KEY, lines, { placement: "aboveEditor" });
   }
 }

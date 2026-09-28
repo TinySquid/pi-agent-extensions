@@ -9,8 +9,8 @@ import { describeFailure, fetchUsage, type UsageMeter } from "./dashboard.ts";
 import { type Period } from "./periods.ts";
 
 /**
- * Owns the extension's mutable state — config, meters, fetch error — and the
- * refresh engine (single-flight fetch + TTL timer). Mutations validate,
+ * Owns the extension's mutable state (config, meters, fetch error) and the
+ * refresh engine: single-flight fetch + TTL timer. Mutations validate,
  * persist, then notify subscribers; the composition root subscribes to
  * re-render the footer. UI/theme live outside the store.
  */
@@ -115,18 +115,20 @@ export class UsageStore {
       this.lastFetchedAt = 0;
       return;
     }
+
     const workspaceId = normalizeWorkspaceId(creds.workspaceId);
     if (!workspaceId) {
       this.meters = [];
       this.lastError = "invalid workspace id (expected wrk_…)";
       return;
     }
+
     try {
       this.meters = await fetchUsage(workspaceId, creds.sessionCookie);
       this.lastFetchedAt = Date.now();
       this.lastError = null;
     } catch (err) {
-      this.lastError = describeFailure(err); // keep meters — views mark them stale
+      this.lastError = describeFailure(err); // keep meters: views mark them stale
     }
   }
 
