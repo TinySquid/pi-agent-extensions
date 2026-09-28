@@ -2,7 +2,7 @@
 
 Repo-specific rules for a reviewer-agent pass on a diff. Everything here exists because this repo is a collection of **independently versioned pi extensions** — a generic TypeScript review would miss all of it.
 
-Style rules (grouping, comments) live in [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md); this file covers packaging, pi-runtime semantics, and process. A reviewer pass reads both, works whole touched files for context, and applies fixes only within the task's diff regions — flag out-of-scope violations, don't fix them.
+Style rules (grouping, comments) are the `code-chunking` and `writing-code-comments` skills; this file covers packaging, pi-runtime semantics, and process. A reviewer pass reads both the skills and this file, works whole touched files for context, and applies fixes only within the task's diff regions — flag out-of-scope violations, don't fix them.
 
 Each item below is phrased as a **finding**: what the reviewer reports when the rule is violated.
 
