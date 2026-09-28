@@ -96,4 +96,5 @@ Missing keys are simply left unset (defaults apply).
 
 - In the interactive TUI, quitting or switching sessions within the ~1–2s naming window loses the name (cosmetic; a warning is logged).
 - Failures and config problems are logged to the terminal (`[auto-session-name] ...`), never surfaced in the UI.
+- The naming call passes the session id, which opencode gateways require: without it they reject the call with `400 MissingSessionID` and the session silently stays unnamed (pi-ai derives `x-opencode-session` from it since 0.87.1).
 - Titles are sanitized: surrounding quotes added by chatty models are stripped, and an empty response leaves the session unnamed rather than setting a garbage name.

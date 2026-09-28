@@ -329,7 +329,12 @@ const generateSessionName = async (
           },
         ],
       },
-      buildRequestOptions(model, config),
+      // opencode gateways reject a request without a session id (400
+      // MissingSessionID); pi-ai derives x-opencode-session from this option.
+      {
+        ...buildRequestOptions(model, config),
+        sessionId: ctx.sessionManager?.getSessionId?.(),
+      },
     );
 
     // Defend against model shenanigans
