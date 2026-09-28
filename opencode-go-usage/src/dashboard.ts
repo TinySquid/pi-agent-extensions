@@ -9,7 +9,7 @@
  *
  * The response JSON carries `access.meters` with `limitMicroCents` /
  * `usedMicroCents` per window plus window start/reset timestamps. The month
- * meter has no resetsAt — the monthly reset is the billing period end
+ * meter has no resetsAt because the monthly reset is the billing period end
  * (`access.endsAt`), which the console page also uses. The extension reports
  * percentages and countdowns only (never dollar amounts).
  *
@@ -31,7 +31,7 @@ const USER_AGENT =
 /** One parsed usage window from the status payload. */
 export interface UsageMeter {
   period: import("./periods.ts").Period;
-  /** 0–100, clamped. May carry decimals (0.7 means 0.7%). */
+  /** 0-100, clamped. May carry decimals (0.7 means 0.7%). */
   percent: number;
   /** ISO timestamp of rollover, or null when the window is not open. */
   resetsAt: string | null;
@@ -66,7 +66,7 @@ export function parseStatusPayload(payload: unknown): UsageMeter[] {
   const meters = a.meters;
   if (typeof meters !== "object" || meters === null) return [];
   const record = meters as Record<string, unknown>;
-  // The month meter carries no resetsAt of its own — the console page derives
+  // The month meter carries no resetsAt of its own: the console page derives
   // its monthly reset date from the billing period end (access.endsAt).
   const periodEnd = typeof a.endsAt === "string" && a.endsAt ? a.endsAt : null;
 
@@ -75,11 +75,13 @@ export function parseStatusPayload(payload: unknown): UsageMeter[] {
     const meter = record[key];
     if (typeof meter !== "object" || meter === null) continue;
     const m = meter as Record<string, unknown>;
+
     const limit = Number(m.limitMicroCents);
     const used = Number(m.usedMicroCents);
     if (!Number.isFinite(limit) || limit <= 0 || !Number.isFinite(used)) {
       continue;
     }
+
     const resetsAt =
       typeof m.resetsAt === "string" && m.resetsAt ? m.resetsAt : periodEnd;
     parsed.push({
@@ -98,8 +100,10 @@ export async function fetchUsage(
   origin = ORIGIN,
 ): Promise<UsageMeter[]> {
   const orgId = normalizeWorkspaceId(workspaceId) ?? workspaceId;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetch(`${origin}${STATUS_PATH}`, {
@@ -136,11 +140,12 @@ export async function fetchUsage(
   } catch {
     throw { kind: "no-payload" } as FetchFailure;
   }
+
   const meters = parseStatusPayload(payload);
   if (meters.length === 0) {
-    // A 200 that parses but carries no meters means the auth shape is wrong
-    // (e.g. wrong cookie) or the payload schema changed — both are auth-shaped
-    // from the user's perspective.
+    // A 200 that parses but carries no meters means the auth shape is wrong.
+    // That covers a wrong cookie or a changed payload schema: auth-shaped to
+    // the user either way.
     throw { kind: "unauthorized" } as FetchFailure;
   }
   return meters;
@@ -154,11 +159,11 @@ export function describeFailure(failure: unknown): string {
     case "network":
       return `network error: ${f.detail}`;
     case "unauthorized":
-      return "session expired — set a fresh one with /opencode-go session-cookie";
+      return "session expired, set a fresh one with /opencode-go session-cookie";
     case "http":
       return `HTTP ${f.status}`;
     case "no-payload":
-      return "no usage data in response — opencode.ai API may have changed";
+      return "no usage data in response, opencode.ai API may have changed";
     default:
       return failure instanceof Error ? failure.message : String(failure);
   }

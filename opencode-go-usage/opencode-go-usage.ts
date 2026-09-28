@@ -1,5 +1,5 @@
 /**
- * OpenCode Go usage — footer status line + usage table for the OpenCode Go plan.
+ * OpenCode Go usage: footer status line + usage table for the OpenCode Go plan.
  *
  * Data comes from opencode.ai's console API:
  *

@@ -71,7 +71,7 @@ type ConfigRead =
   | { status: "ok"; config: NameConfig }
   /** valid provider/model; malformed temperature/thinking fields were dropped */
   | { status: "repair"; config: NameConfig }
-  /** missing or unusable — regenerate the whole file from the default pick */
+  /** missing or unusable; regenerate the whole file from the default pick */
   | { status: "regen" };
 
 const configPath = (): string => join(getAgentDir(), CONFIG_FILE);
@@ -85,7 +85,7 @@ const writeConfigFile = (config: NameConfig, message: string): void => {
   }
 };
 
-/** Providers cap temperature (Anthropic 0–1, Google/OpenAI 0–2); 0–2 is the
+/** Providers cap temperature (Anthropic 0-1, Google/OpenAI 0-2); 0-2 is the
  * widest valid range. Out-of-range values would be rejected by the API on
  * every naming run, so they are treated as malformed and repaired away. */
 const isTemperature = (value: unknown): value is number =>
@@ -104,11 +104,12 @@ const readField = <T>(
   if (value === undefined) {
     return undefined;
   }
+
   if (isValid(value)) {
     return value;
   }
   console.warn(
-    `[auto-session-name] invalid ${CONFIG_FILE}: "${name}" ${expectation} — dropping it`,
+    `[auto-session-name] invalid ${CONFIG_FILE}: "${name}" ${expectation}; dropping it`,
   );
   return undefined;
 };
@@ -123,11 +124,13 @@ const readConfig = (): ConfigRead => {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       return { status: "regen" };
     }
+
     console.warn(
-      `[auto-session-name] invalid ${CONFIG_FILE} — regenerating from default pick (${err})`,
+      `[auto-session-name] invalid ${CONFIG_FILE}, regenerating from default pick (${err})`,
     );
     return { status: "regen" };
   }
+
   if (
     typeof parsed.provider !== "string" ||
     parsed.provider.length === 0 ||
@@ -135,7 +138,7 @@ const readConfig = (): ConfigRead => {
     parsed.model.length === 0
   ) {
     console.warn(
-      `[auto-session-name] invalid ${CONFIG_FILE}: expected { "provider": "...", "model": "...", "temperature"?: number, "thinking"?: "off" | "minimal" | ... | "max" } — regenerating from default pick`,
+      `[auto-session-name] invalid ${CONFIG_FILE}: expected { "provider": "...", "model": "...", "temperature"?: number, "thinking"?: "off" | "minimal" | ... | "max" }, regenerating from default pick`,
     );
     return { status: "regen" };
   }
@@ -159,12 +162,15 @@ const readConfig = (): ConfigRead => {
   if (temperature !== undefined) {
     config.temperature = temperature;
   }
+
   if (thinking !== undefined) {
     config.thinking = thinking;
   }
+
   const dropped =
     (parsed.temperature !== undefined && temperature === undefined) ||
     (parsed.thinking !== undefined && thinking === undefined);
+
   return dropped ? { status: "repair", config } : { status: "ok", config };
 };
 
@@ -172,12 +178,12 @@ const readConfig = (): ConfigRead => {
  * Generate a config pinning the model the default pick resolved to, so users
  * have a starting point to edit. Called when the file is missing or unusable
  * (no valid provider/model). A file with a valid provider/model is never
- * overwritten — malformed option fields are repaired in place instead.
+ * overwritten; malformed option fields are repaired in place instead.
  */
 const writeDefaultConfig = (model: Model<Api>): void => {
   writeConfigFile(
     { provider: model.provider, model: model.id },
-    `generated ${CONFIG_FILE} (provider "${model.provider}", model "${model.id}") — edit it to change the naming model or request options`,
+    `generated ${CONFIG_FILE} (provider "${model.provider}", model "${model.id}"). Edit it to change the naming model or request options`,
   );
 };
 
@@ -187,11 +193,13 @@ const pickModel = (
 ): Model<Api> | undefined => {
   if (config) {
     const model = ctx.modelRegistry.find(config.provider, config.model);
+
     if (model && ctx.modelRegistry.hasConfiguredAuth(model)) {
       return model;
     }
+
     console.warn(
-      `[auto-session-name] configured model ${config.provider}/${config.model} not found or not authenticated — using default pick`,
+      `[auto-session-name] configured model ${config.provider}/${config.model} not found or not authenticated; using the default pick`,
     );
   }
 
@@ -202,6 +210,7 @@ const pickModel = (
   if (pool.length > 0) {
     return [...pool].sort((a, b) => a.cost.input - b.cost.input)[0];
   }
+
   return ctx.model;
 };
 
@@ -241,6 +250,7 @@ const buildRequestOptions = (
   config: NameConfig | undefined,
 ): ApiOptions => {
   const options: StreamOptions = {};
+
   if (config?.temperature !== undefined) {
     options.temperature = config.temperature;
   }
@@ -250,6 +260,7 @@ const buildRequestOptions = (
     if (!model.reasoning) {
       return options;
     }
+
     switch (model.api) {
       case "anthropic-messages":
         return { ...options, thinkingEnabled: false };
@@ -275,11 +286,12 @@ const buildRequestOptions = (
       };
     case "google-generative-ai":
     case "google-vertex": {
-      // Respect model-specific level mappings (e.g. gemma-4: medium → HIGH)
+      // Respect model-specific level mappings (e.g. gemma-4 maps medium to HIGH)
       const mapped = model.thinkingLevelMap?.[level];
       const googleLevel = (
         typeof mapped === "string" ? mapped : level
       ).toUpperCase() as GoogleApiThinkingLevel;
+
       return { ...options, thinking: { enabled: true, level: googleLevel } };
     }
     default:
@@ -300,11 +312,13 @@ const generateSessionName = async (
 ) => {
   try {
     const read = readConfig();
+
     const config = read.status === "regen" ? undefined : read.config;
     const model = pickModel(ctx, config);
+
     if (!model) {
       console.warn(
-        "[auto-session-name] no model available — skipping session naming",
+        "[auto-session-name] no model available; skipping session naming",
       );
       return;
     }
@@ -337,7 +351,7 @@ const generateSessionName = async (
       },
     );
 
-    // Defend against model shenanigans
+    // Model output is untrusted: filter to text blocks and strip wrapping quotes
     const title = response.content
       .filter((c): c is { type: "text"; text: string } => c.type === "text")
       .map((c) => c.text)
@@ -354,9 +368,9 @@ const generateSessionName = async (
 };
 
 /**
- * /reload will cause a re-run of the extension but getSessionName() guard prevents
- * us from generating another session name (pi doesn't set session name by default)
- **/
+ * /reload re-runs the extension; the getSessionName() guard prevents a second
+ * naming run (pi does not set a session name by default)
+ */
 export default function (pi: ExtensionAPI) {
   let startPrompt: string | undefined;
   let isSessionNamed = false;
@@ -374,11 +388,12 @@ export default function (pi: ExtensionAPI) {
     if (pi.getSessionName()) return;
 
     isSessionNamed = true;
+
     const naming = generateSessionName(pi, ctx, startPrompt);
 
     // TUI: the session outlives the turn, so run naming in the background
     // without delaying the user's prompt. One-shot modes (print/json/rpc)
-    // tear down the session right after agent_end — awaiting there is free
+    // tear down the session right after agent_end, so awaiting there is free
     // (no interactive user) and avoids the stale-session guard.
     // TUI edge: quitting or switching sessions within the ~1-2s naming
     // window loses the name (warned, cosmetic).
