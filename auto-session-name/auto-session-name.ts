@@ -381,13 +381,13 @@ export default function (pi: ExtensionAPI) {
   let startPrompt: string | undefined;
   let isSessionNamed = false;
 
-  // A fresh session (new or fork, only reachable in interactive runs) gets
-  // its own naming run; reset the one-per-fresh-session state
+  // Interactive gating happens in agent_end (ctx.mode); /new or /fork starts
+  // a fresh interactive session, so reset the one-name-per-fresh-session guard.
   pi.on("session_start", (event) => {
-    if (event.reason === "new" || event.reason === "fork") {
-      startPrompt = undefined;
-      isSessionNamed = false;
-    }
+    if (event.reason !== "new" && event.reason !== "fork") return;
+
+    startPrompt = undefined;
+    isSessionNamed = false;
   });
 
   // Excludes any skill invocation at session start
