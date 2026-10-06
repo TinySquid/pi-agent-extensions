@@ -35,10 +35,13 @@ Debug flaky Vitest snapshot                     7 2d
                     └────────────────────────────────┘
 ```
 
-- **When it fires** — once per session, on `agent_end` after the first turn, and only if the session has no name yet. Skill invocations at session start are ignored; `/reload` re-runs the extension but the existing-name guard prevents a second naming run.
+- **When it fires** — in the interactive TUI only, once per session, on `agent_end` after the first turn, and only if the session has no name yet. Skill invocations at session start are ignored; `/reload` re-runs the extension but the existing-name guard prevents a second naming run.
+- **When it doesn't fire** — one-shot modes (`-p` / `--print`, `--mode json`, `--mode rpc`, and implicitly piped runs), `--no-session`, and any session that already has a name. That last guard is what makes explicit `--name <x>` respected: the user's name is never replaced.
+- **Why interactive only** — one-shot runs are scripted; naming burns a model call per invocation and the sessions are usually throwaway. Named sessions only matter for the `/resume` picker, which people use interactively.
 - **Why a name** — named sessions are searchable in the `/resume` picker (and survive Ctrl+N's named-only filter), and the terminal title becomes `pi - <session name> - <cwd>` instead of just `pi - <cwd>`.
 - **Model pick** — uses the model pinned in the config file. Without a config, it picks the cheapest available model by input token cost (respecting session model scoping via `enabledModels` / `--models`), falling back to the active session model.
-- **Non-blocking** — in the interactive TUI, naming runs in the background so the prompt is never delayed. In one-shot modes (`-p`, `--json`), the turn ends slightly later while the name is generated.
+- **Non-blocking** — naming runs in the background so the prompt is never delayed (it never delays anything: it only runs in the interactive TUI).
+- **One name per fresh session** — `/new` and `/fork` inside a TUI run reset the guard, so each fresh session gets its own naming run from its own first prompt.
 
 ## Install
 
@@ -94,7 +97,8 @@ Missing keys are simply left unset (defaults apply).
 
 ## Behavior notes
 
-- In the interactive TUI, quitting or switching sessions within the ~1–2s naming window loses the name (cosmetic; a warning is logged).
+- Quitting or switching sessions within the ~1–2s naming window loses the name (cosmetic; a warning is logged).
+- Everything the config file touches happens inside a naming run, so file generation and self-healing only occur in interactive sessions — a purely scripted (`-p`) usage never creates the config file.
 - Failures and config problems are logged to the terminal (`[auto-session-name] ...`), never surfaced in the UI.
 - The naming call passes the session id, which opencode gateways require: without it they reject the call with `400 MissingSessionID` and the session silently stays unnamed (pi-ai derives `x-opencode-session` from it since 0.87.1).
 - Titles are sanitized: surrounding quotes added by chatty models are stripped, and an empty response leaves the session unnamed rather than setting a garbage name.

@@ -4,6 +4,12 @@
  * After the first turn, this extension generates a short, descriptive
  * name for the session using a cheap available model.
  *
+ * Only interactive runs (ctx.mode === "tui") name sessions. One-shot
+ * modes (print/json/rpc, including implicitly piped runs) and
+ * non-persisted sessions (--no-session) are skipped entirely, and an
+ * already-named session is never renamed — so explicit --name (and
+ * -c/-r on a named session) are respected for free.
+ *
  * The naming model and request options can be overridden via a global config
  * file: ~/.pi/agent/auto-session-name.json
  *   { "provider": "google", "model": "gemma-4-26b-a4b-it", "temperature": 0.2,
@@ -375,6 +381,15 @@ export default function (pi: ExtensionAPI) {
   let startPrompt: string | undefined;
   let isSessionNamed = false;
 
+  // Interactive gating happens in agent_end (ctx.mode); /new or /fork starts
+  // a fresh interactive session, so reset the one-name-per-fresh-session guard.
+  pi.on("session_start", (event) => {
+    if (event.reason !== "new" && event.reason !== "fork") return;
+
+    startPrompt = undefined;
+    isSessionNamed = false;
+  });
+
   // Excludes any skill invocation at session start
   pi.on("before_agent_start", (event) => {
     if (!startPrompt) {
@@ -383,20 +398,20 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("agent_end", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
     if (!startPrompt) return;
     if (isSessionNamed) return;
     if (pi.getSessionName()) return;
+    // --no-session runs use an in-memory session: no file until the first
+    // persisted write, which only persisted sessions ever perform
+    if (ctx.sessionManager.getSessionFile() === undefined) return;
 
     isSessionNamed = true;
 
-    const naming = generateSessionName(pi, ctx, startPrompt);
-
-    // TUI: the session outlives the turn, so run naming in the background
-    // without delaying the user's prompt. One-shot modes (print/json/rpc)
-    // tear down the session right after agent_end, so awaiting there is free
-    // (no interactive user) and avoids the stale-session guard.
-    // TUI edge: quitting or switching sessions within the ~1-2s naming
-    // window loses the name (warned, cosmetic).
-    return ctx.mode === "tui" ? undefined : naming;
+    // The session outlives the turn, so run naming in the background
+    // without delaying the user's prompt. The call never rejects (it catches
+    // internally). Edge: quitting or switching sessions within the ~1-2s
+    // naming window loses the name (warned, cosmetic).
+    void generateSessionName(pi, ctx, startPrompt);
   });
 }

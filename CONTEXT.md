@@ -2,6 +2,18 @@
 
 A collection of independently versioned [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) extensions. This glossary covers terms shared across extensions; each extension's domain terms live here too.
 
+**Interactive run**:
+A pi run in TUI mode (`ctx.mode === "tui"`). The only mode auto-rename operates in. Includes `-c`/`-r` and an initial prompt that falls through to the TUI.
+_Avoid_: Interactive mode (ambiguous about which layer), TUI session
+
+**One-shot run**:
+A pi run in print, JSON, or RPC mode. No naming — sessions in these runs are unnamed unless `--name` set one. Non-persisted (`--no-session`) runs are excluded too.
+_Avoid_: Non-interactive, headless
+
+**Naming run**:
+The single naming attempt per fresh session: first prompt of the run through the naming model, then `setSessionName`. Never for an already-named session.
+_Avoid_: Rename (implies overwriting an existing name)
+
 ## OpenCode Go usage
 
 **Period**:
