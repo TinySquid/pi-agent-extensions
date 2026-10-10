@@ -3,6 +3,8 @@
 [![npm version](https://img.shields.io/npm/v/@tinysquid/pi-memory?style=flat-square)](https://www.npmjs.com/package/@tinysquid/pi-memory)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](https://github.com/TinySquid/pi-agent-extensions/blob/main/LICENSE)
 
+> **DEPRECATED** - No longer maintained; use other agent-memory approaches.
+
 > Persistent project memory for the [pi coding agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
 
 Give your agent a project brain. `MEMORY.md` lives at the project root and is injected into the system prompt on every session start, and the `/remember` command distills the current session back into it — decisions, preferences, and lessons that survive across sessions, projects, and model resets.
