@@ -10,7 +10,7 @@ Items are phrased as **findings**: what the reviewer reports when the rule is vi
 
 1. **Peer-dependency discipline.** Diff touches `<name>/package.json` and a core pi package (`@earendil-works/pi-ai`, `pi-coding-agent`, `pi-tui`, `pi-agent-core`, `typebox`) appears in `dependencies`, or in `peerDependencies` with a range other than `"*"`. These packages are bundled by pi at runtime; a wrong line ships a duplicate dependency to every install.
 2. **Version-bump scope.** A `<name>/package.json` bump with no real change under `<name>/`, or a change under `<name>/` with no bump in a release PR. Semver is independent per extension; root `pnpm-workspace.yaml` and root `README.md` must know about every new extension dir.
-3. **README SOP.** A new or changed `<name>/README.md` that doesn't follow [`docs/extension-readme-sop.md`](../extension-readme-sop.md): order, template, index-row alignment, claim-traces-to-source.
+3. **README SOP.** A new or changed `<name>/README.md` that doesn't follow [`docs/extension-readme-sop.md`](../extension-readme-sop.md): shape, inventory coverage, index-row alignment, claim-traces-to-source.
 4. **Root pins.** Root `devDependencies` pins for pi packages changed without updating both pins together, exactly.
 
 ## pi runtime semantics
