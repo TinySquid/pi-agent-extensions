@@ -5,7 +5,7 @@ This repository is a collection of custom [pi](https://github.com/badlogic/pi-mo
 ## Layout
 
 - One directory per extension: `<name>/<name>.ts` (entry point), `<name>/README.md` (becomes the npm README), `<name>/package.json` (publish metadata)
-- Extension READMEs follow [`docs/extension-readme-sop.md`](docs/extension-readme-sop.md) — read it before writing or updating one. Done when: every README claim traces to the source.
+- Extension READMEs follow [`docs/extension-readme-sop.md`](docs/extension-readme-sop.md) — read it before writing or updating one, on every README change. Done when: every README claim traces to the source, every registered command/hook/config default appears, and the file conforms to the template.
 - Every extension dir is a pnpm workspace member — list it in `pnpm-workspace.yaml`
 - The root `README.md` holds the extension index — update it when adding or removing extensions
 
