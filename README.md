@@ -7,8 +7,10 @@ Custom [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
 | Extension                                 | Description                                                         |
 | ----------------------------------------- | ------------------------------------------------------------------- |
 | [auto-session-name](./auto-session-name/) | Auto-generates descriptive session names after the first turn       |
-| [memory](./memory/)                       | Persistent project memory across sessions (MEMORY.md + `/remember`) |
+| [memory](./memory/) — **deprecated**      | Persistent project memory across sessions (MEMORY.md + `/remember`) |
 | [opencode-go-usage](./opencode-go-usage/) | OpenCode Go plan usage in the footer + `/opencode-go` usage table   |
+
+> **memory** is deprecated: the package stays published on npm, but it is no longer maintained — other, better ways of handling agent memory exist.
 
 ## Install
 
