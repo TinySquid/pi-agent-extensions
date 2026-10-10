@@ -11,16 +11,15 @@ This repository is a collection of custom [pi](https://github.com/badlogic/pi-mo
 
 ## Tooling
 
-Package manager is **pnpm** (workspaces). Use pnpm for install, scripts, and publishing.
+Package manager is **pnpm** (workspaces). Use pnpm for install and scripts.
 
-Every change — features, fixes, chores, docs tweaks, anything — runs the full sequence; `format` and `check` also fail CI on:
+Every change — features, fixes, chores, docs tweaks, anything — runs the full sequence before every commit:
 
 ```bash
-pnpm run typecheck
-pnpm run lint
-pnpm run format
 pnpm run check
 ```
+
+`check` = typecheck + lint + prettier write. CI runs the verify-only version, `pnpm run ci` (typecheck + lint + `format:check`), and fails on any of them.
 
 There is no build step: pi loads the `.ts` sources directly with Bun. There is no test framework for pi extensions — testing is manual (see below).
 
@@ -32,7 +31,7 @@ There is no build step: pi loads the `.ts` sources directly with Bun. There is n
 - Core packages (`@earendil-works/pi-ai`, `pi-coding-agent`, `pi-tui`, `pi-agent-core`, `typebox`) are bundled by pi at runtime. In an extension's `package.json` they must be `peerDependencies` with a `"*"` range — never `dependencies` (wildcard prevents duplication and version mismatches with the host pi installation).
 - The root `devDependencies` pin the pi packages **exactly** to the installed pi version. Check with `pi --version`; when pi is upgraded, update both root pins to match. Types must reflect the runtime the user actually runs.
 
-The style rules that apply on top: the `code-chunking` and `writing-code-comments` skills (installed in your skills dir). They cover vertical grouping and comment content; apply them to every file a diff touches.
+The style rules that apply on top: the `code-chunking` and `code-comments` skills (installed in your skills dir). They cover vertical grouping and comment content; apply them to every file a diff touches.
 
 ## Manual testing loop
 
@@ -65,7 +64,7 @@ Report what was and wasn't tested.
 
 Order matters — the first publish is manual, after that CI owns releases.
 
-1. Scaffold: copy `memory/` as a template into `<name>/` — `<name>.ts`, `README.md`, `package.json` (name `@tinysquid/pi-<name>`, version `0.1.0`, `"publishConfig": { "access": "public" }` — scoped packages default to private without it). Add the dir to `pnpm-workspace.yaml` and to the extension index in the root `README.md`.
+1. Scaffold: copy `memory/` as a template into `<name>/` (the package is deprecated — only its files serve as the template) — `<name>.ts`, `README.md`, `package.json` (name `@tinysquid/pi-<name>`, version `0.1.0`, `"publishConfig": { "access": "public" }` — scoped packages default to private without it). Add the dir to `pnpm-workspace.yaml` and to the extension index in the root `README.md`.
 2. `pnpm install && pnpm run check`
 3. Smoke test (see Manual testing loop) and report what was and wasn't tested
 4. Stop. The rest is the user's: first publish by hand, then attach the npm trusted publisher. Hand over with the branch ready and the smoke-test report.
@@ -83,7 +82,7 @@ A release is a PR that bumps the version of one or more extension packages. **Th
 4. Push the branch and open a PR (see Git workflow)
 5. The user merges → GitHub Actions runs the checks and `pnpm publish -r`. Packages whose version already exists on npm are skipped.
 
-The user runs any publish command themselves. Publishing happens only in CI on merge — the merge is the user's final approval.
+The agent never runs a publish command; if one is ever needed by hand, only the user runs it. Automated publishing is CI's job on merge.
 
 ## Git workflow
 
@@ -116,7 +115,7 @@ Default canonical role names (`needs-triage`, `needs-info`, `ready-for-agent`, `
 
 ### Domain docs
 
-Single-context: root `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: root `GLOSSARY.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
 ### Review checklist
 

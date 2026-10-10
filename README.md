@@ -35,7 +35,7 @@ pnpm install
 There is no build step - pi loads the `.ts` sources directly. For quick iteration, symlink an extension into your pi extensions dir:
 
 ```bash
-ln -s $(pwd)/memory/memory.ts ~/.pi/agent/extensions/memory.ts
+ln -s $(pwd)/opencode-go-usage/opencode-go-usage.ts ~/.pi/agent/extensions/opencode-go-usage.ts
 ```
 
 Scripts:
