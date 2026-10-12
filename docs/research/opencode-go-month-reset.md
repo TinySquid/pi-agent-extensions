@@ -13,8 +13,8 @@ switches automatically with no functional change required. Two things are still
 worth doing:
 
 1. The `access.endsAt` fallback is currently applied to **all three** meters.
-   `fiveHour.resetsAt` is nullable, and a null there means "window has not
-   opened yet", not "resets at billing period end" — so the fallback should be
+   `fiveHour.resetsAt` is nullable, and a null there means the period has not
+   opened yet, not "resets at billing period end" — so the fallback should be
    scoped to the month meter only.
 2. The header comment and the inline comment in `src/dashboard.ts` state the
    month meter has no `resetsAt`; that is now stale.
@@ -22,7 +22,7 @@ worth doing:
 ### Why the 5h countdown sometimes showed the month reset
 
 That is the same bug. The fallback was applied to every meter, and
-`fiveHour.resetsAt` is nullable: while the 5h window has not opened (the
+`fiveHour.resetsAt` is nullable: while the 5h period has not opened (the
 console renders "Starts on first use"), the parser substituted `access.endsAt` —
 which is the month reset — so the 5h countdown displayed the month countdown.
 
@@ -100,7 +100,7 @@ access: I(XW);
 
 - `kn` is the Date schema; `I(...)` marks nullable. So `fiveHour.resetsAt` is
   **nullable**, while `week.resetsAt` and **`month.resetsAt` are not**.
-- The month meter has no `startsAt`; its only window fields are `resetsAt`,
+- The month meter has no `startsAt`; its only fields are `resetsAt`,
   `limitMicroCents`, and `usedMicroCents`.
 - `startsAt` / `endsAt` / `cancelAtPeriodEnd` live on `access`, separate from
   the meters.
@@ -146,11 +146,12 @@ Endpoint, auth, and `UsageMeter` shape stay the same. The change is confined to
   instead of a bogus billing-end date:
 
   ```ts
-  const own = typeof m.resetsAt === "string" && m.resetsAt ? m.resetsAt : null;
-  // access.endsAt is the billing period end. Only the month window has ever
+  const ownResetsAt =
+    typeof m.resetsAt === "string" && m.resetsAt ? m.resetsAt : null;
+  // access.endsAt is the billing period end. Only the monthly meter has ever
   // shared it, and only as a legacy fallback; a null fiveHour.resetsAt means
-  // the window has not opened yet ("starts on first use" in the console).
-  const resetsAt = own ?? (period === "monthly" ? periodEnd : null);
+  // the period has not opened yet ("starts on first use" in the console).
+  const resetsAt = ownResetsAt ?? (period === "monthly" ? periodEnd : null);
   ```
 
 - Update the file header comment and the inline comment that claim the month
