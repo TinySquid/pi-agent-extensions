@@ -8,15 +8,20 @@
  *   x-org-id: <wrk_… org id>
  *
  * The response JSON carries `access.meters` with `limitMicroCents` /
- * `usedMicroCents` per window plus window start/reset timestamps. The month
- * meter has no resetsAt because the monthly reset is the billing period end
- * (`access.endsAt`), which the console page also uses. The extension reports
+ * `usedMicroCents` per window plus window start/reset timestamps. Every window
+ * now carries its own `resetsAt`, the month meter included; the console page
+ * reads `month.resetsAt` for the monthly reset and for its renewal grace
+ * period. A null `resetsAt` means the window has not opened yet ("starts on
+ * first use" in the console). `access.endsAt` is the billing period end and
+ * remains only as a legacy fallback for the month meter. The extension reports
  * percentages and countdowns only (never dollar amounts).
  *
  *   "meters": {
  *     "fiveHour": { "resetsAt": "…", "limitMicroCents": "1200000000",
  *                   "usedMicroCents": "1138760", … },
- *     "week":     { … }, "month": { … }
+ *     "week":     { "resetsAt": "…", … },
+ *     "month":    { "resetsAt": "…", "limitMicroCents": "6000000000",
+ *                   "usedMicroCents": "1138760" }
  *   }
  */
 
@@ -66,8 +71,8 @@ export function parseStatusPayload(payload: unknown): UsageMeter[] {
   const meters = a.meters;
   if (typeof meters !== "object" || meters === null) return [];
   const record = meters as Record<string, unknown>;
-  // The month meter carries no resetsAt of its own: the console page derives
-  // its monthly reset date from the billing period end (access.endsAt).
+  // Billing period end. Only the month meter has ever shared it, and only as a
+  // legacy fallback now that month.resetsAt is served.
   const periodEnd = typeof a.endsAt === "string" && a.endsAt ? a.endsAt : null;
 
   const parsed: UsageMeter[] = [];
@@ -82,8 +87,13 @@ export function parseStatusPayload(payload: unknown): UsageMeter[] {
       continue;
     }
 
-    const resetsAt =
-      typeof m.resetsAt === "string" && m.resetsAt ? m.resetsAt : periodEnd;
+    // Keep a null resetsAt null: it means the window has not opened yet, so
+    // falling back to the billing period end would show the month reset as the
+    // 5h reset.
+    const own =
+      typeof m.resetsAt === "string" && m.resetsAt ? m.resetsAt : null;
+    const resetsAt = own ?? (period === "monthly" ? periodEnd : null);
+
     parsed.push({
       period,
       percent: Math.min(100, Math.max(0, (used / limit) * 100)),
