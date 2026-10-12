@@ -1,20 +1,21 @@
 /**
  * API fetch + parse.
  *
- * opencode.ai now exposes a usage API at `/console/api/go/status`. The route
- * is served by the console backend and requires:
+ * opencode.ai exposes a usage API at `/console/api/go/status`. The route is
+ * served by the console backend and requires:
  *
  *   Cookie: __Host-console_session=st_…
  *   x-org-id: <wrk_… org id>
  *
  * The response JSON carries `access.meters` with `limitMicroCents` /
- * `usedMicroCents` per window plus window start/reset timestamps. Every window
- * now carries its own `resetsAt`, the month meter included; the console page
- * reads `month.resetsAt` for the monthly reset and for its renewal grace
- * period. A null `resetsAt` means the window has not opened yet ("starts on
- * first use" in the console). `access.endsAt` is the billing period end and
- * remains only as a legacy fallback for the month meter. The extension reports
- * percentages and countdowns only (never dollar amounts).
+ * `usedMicroCents` per period, plus `startsAt`/`resetsAt` timestamps. Every
+ * meter carries its own `resetsAt`, the monthly meter included. A null
+ * `resetsAt` means the period has not opened yet ("starts on first use" in the
+ * console). Use the monthly meter's `resetsAt`, not `access.endsAt`: during a
+ * retrying renewal the grace period runs past `endsAt`, so the two dates
+ * differ. `access.endsAt` is the billing period end, and the fallback when the
+ * monthly meter carries no `resetsAt`. The extension reports percentages and
+ * countdowns only (never dollar amounts).
  *
  *   "meters": {
  *     "fiveHour": { "resetsAt": "…", "limitMicroCents": "1200000000",
@@ -33,12 +34,11 @@ const REQUEST_TIMEOUT_MS = 20_000;
 const USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-/** One parsed usage window from the status payload. */
 export interface UsageMeter {
   period: import("./periods.ts").Period;
   /** 0-100, clamped. May carry decimals (0.7 means 0.7%). */
   percent: number;
-  /** ISO timestamp of rollover, or null when the window is not open. */
+  /** ISO timestamp of rollover, or null when the period is not open. */
   resetsAt: string | null;
 }
 
@@ -62,7 +62,6 @@ export function normalizeSessionCookie(raw: string): string | null {
   return match ? match[0] : null;
 }
 
-/** Parse the three usage windows out of the status JSON. */
 export function parseStatusPayload(payload: unknown): UsageMeter[] {
   if (typeof payload !== "object" || payload === null) return [];
   const access = (payload as Record<string, unknown>).access;
@@ -71,8 +70,8 @@ export function parseStatusPayload(payload: unknown): UsageMeter[] {
   const meters = a.meters;
   if (typeof meters !== "object" || meters === null) return [];
   const record = meters as Record<string, unknown>;
-  // Billing period end. Only the month meter has ever shared it, and only as a
-  // legacy fallback now that month.resetsAt is served.
+  // `access.endsAt` is the billing period end, used only as the fallback for
+  // a monthly meter that carries no `resetsAt`.
   const periodEnd = typeof a.endsAt === "string" && a.endsAt ? a.endsAt : null;
 
   const parsed: UsageMeter[] = [];
@@ -87,12 +86,12 @@ export function parseStatusPayload(payload: unknown): UsageMeter[] {
       continue;
     }
 
-    // Keep a null resetsAt null: it means the window has not opened yet, so
-    // falling back to the billing period end would show the month reset as the
-    // 5h reset.
-    const own =
+    // Never substitute the billing period end for a null `resetsAt`: a null
+    // means the period has not opened yet, and the 5h meter would show the
+    // monthly reset.
+    const ownResetsAt =
       typeof m.resetsAt === "string" && m.resetsAt ? m.resetsAt : null;
-    const resetsAt = own ?? (period === "monthly" ? periodEnd : null);
+    const resetsAt = ownResetsAt ?? (period === "monthly" ? periodEnd : null);
 
     parsed.push({
       period,
@@ -100,6 +99,7 @@ export function parseStatusPayload(payload: unknown): UsageMeter[] {
       resetsAt,
     });
   }
+
   return parsed;
 }
 
@@ -130,6 +130,7 @@ export async function fetchUsage(
     if (err instanceof Error && err.name === "AbortError") {
       throw { kind: "timeout" } as FetchFailure;
     }
+
     throw {
       kind: "network",
       detail: err instanceof Error ? err.message : String(err),
@@ -141,6 +142,7 @@ export async function fetchUsage(
   if (response.status === 401 || response.status === 403) {
     throw { kind: "unauthorized" } as FetchFailure;
   }
+
   if (!response.ok)
     throw { kind: "http", status: response.status } as FetchFailure;
 
@@ -158,11 +160,13 @@ export async function fetchUsage(
     // the user either way.
     throw { kind: "unauthorized" } as FetchFailure;
   }
+
   return meters;
 }
 
 export function describeFailure(failure: unknown): string {
   const f = failure as FetchFailure;
+
   switch (f?.kind) {
     case "timeout":
       return "request timed out";
