@@ -68,9 +68,35 @@ type NameConfig = {
 
 const sessionNamePrompt = (userMessage: string): string => {
   return [
-    "Generate a short, descriptive, relevant title (between 3 and 8 words max) for an AI prompting session based on the following message:",
+    "Generate a short, descriptive, relevant title (between 3 and 8 words max) for an AI prompting session.",
+    "Return only the title as a single line of plain text. Do not use Markdown formatting, quotation marks, labels, or explanations.",
+    "Base the title on the following message:",
     `"${userMessage}"`,
   ].join("\n");
+};
+
+const normalizeSessionName = (raw: string): string => {
+  let title = raw.trim();
+
+  while (title) {
+    const previous = title;
+    title = title.replace(/^["']|["']$/g, "").trim();
+    title = title.replace(/^\*+|\*+$/g, "").trim();
+
+    const wrapped = title.match(/^(__|_|`{1,2}|~~)([^\r\n]*)\1$/u);
+    if (wrapped) {
+      const [, marker, inner] = wrapped;
+      const edge = marker[0];
+      // Exact boundary runs only: preserve fences and asymmetric wrappers.
+      if (!inner.startsWith(edge) && !inner.endsWith(edge)) {
+        title = inner.trim();
+      }
+    }
+
+    if (title === previous) break;
+  }
+
+  return title;
 };
 
 type ConfigRead =
@@ -357,13 +383,12 @@ const generateSessionName = async (
       },
     );
 
-    // Model output is untrusted: filter to text blocks and strip wrapping quotes
-    const title = response.content
+    // Model output is untrusted: keep text blocks and normalize title boundaries
+    const rawTitle = response.content
       .filter((c): c is { type: "text"; text: string } => c.type === "text")
       .map((c) => c.text)
-      .join("")
-      .trim()
-      .replace(/^["']|["']$/g, "");
+      .join("");
+    const title = normalizeSessionName(rawTitle);
 
     if (title) {
       pi.setSessionName(title);
