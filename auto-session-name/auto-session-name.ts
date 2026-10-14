@@ -1,8 +1,11 @@
 /**
  * Auto Session Naming Extension
  *
- * After the first turn, this extension generates a short, descriptive
- * name for the session using a cheap available model.
+ * On the first eligible user run, this extension starts generating a short,
+ * descriptive session name using a cheap available model. Work is deferred
+ * until after before_agent_start returns; the naming response is not awaited.
+ * An explicit name set while the request is in flight aborts the request and
+ * is never replaced by the generated name.
  *
  * Only interactive runs (ctx.mode === "tui") name sessions. One-shot
  * modes (print/json/rpc, including implicitly piped runs) and
@@ -68,9 +71,35 @@ type NameConfig = {
 
 const sessionNamePrompt = (userMessage: string): string => {
   return [
-    "Generate a short, descriptive, relevant title (between 3 and 8 words max) for an AI prompting session based on the following message:",
+    "Generate a short, descriptive, relevant title (between 3 and 8 words max) for an AI prompting session.",
+    "Return only the title as a single line of plain text. Do not use Markdown formatting, quotation marks, labels, or explanations.",
+    "Base the title on the following message:",
     `"${userMessage}"`,
   ].join("\n");
+};
+
+const normalizeSessionName = (raw: string): string => {
+  let title = raw.trim();
+
+  while (title) {
+    const previous = title;
+    title = title.replace(/^["']|["']$/g, "").trim();
+    title = title.replace(/^\*+|\*+$/g, "").trim();
+
+    const wrapped = title.match(/^(__|_|`{1,2}|~~)([^\r\n]*)\1$/u);
+    if (wrapped) {
+      const [, marker, inner] = wrapped;
+      const edge = marker[0];
+      // Exact boundary runs only: preserve fences and asymmetric wrappers.
+      if (!inner.startsWith(edge) && !inner.endsWith(edge)) {
+        title = inner.trim();
+      }
+    }
+
+    if (title === previous) break;
+  }
+
+  return title;
 };
 
 type ConfigRead =
@@ -315,7 +344,10 @@ const generateSessionName = async (
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   prompt: string,
+  listenForNameChange: (controller: AbortController) => () => void,
 ) => {
+  const controller = new AbortController();
+  let stopListening: (() => void) | undefined;
   try {
     const read = readConfig();
 
@@ -338,6 +370,7 @@ const generateSessionName = async (
       );
     }
 
+    stopListening = listenForNameChange(controller);
     const response = await ctx.modelRegistry.complete(
       model,
       {
@@ -354,22 +387,30 @@ const generateSessionName = async (
       {
         ...buildRequestOptions(model, config),
         sessionId: ctx.sessionManager?.getSessionId?.(),
+        signal: controller.signal,
       },
     );
 
-    // Model output is untrusted: filter to text blocks and strip wrapping quotes
-    const title = response.content
+    // Model output is untrusted: keep text blocks and normalize title boundaries
+    const rawTitle = response.content
       .filter((c): c is { type: "text"; text: string } => c.type === "text")
       .map((c) => c.text)
-      .join("")
-      .trim()
-      .replace(/^["']|["']$/g, "");
+      .join("");
+    const title = normalizeSessionName(rawTitle);
 
-    if (title) {
-      pi.setSessionName(title);
-    }
+    if (!title) return;
+    if (controller.signal.aborted) return;
+    // Do not treat our own session_info_changed event as an explicit rename.
+    stopListening?.();
+    stopListening = undefined;
+    if (pi.getSessionName()) return; // user named it while naming was in flight
+    pi.setSessionName(title);
   } catch (err) {
-    console.warn("[auto-session-name] failed to generate session name:", err);
+    if (!controller.signal.aborted) {
+      console.warn("[auto-session-name] failed to generate session name:", err);
+    }
+  } finally {
+    stopListening?.();
   }
 };
 
@@ -378,40 +419,45 @@ const generateSessionName = async (
  * naming run (pi does not set a session name by default)
  */
 export default function (pi: ExtensionAPI) {
-  let startPrompt: string | undefined;
   let isSessionNamed = false;
+  let activeListener: (() => void) | undefined;
 
-  // Interactive gating happens in agent_end (ctx.mode); /new or /fork starts
-  // a fresh interactive session, so reset the one-name-per-fresh-session guard.
+  const listenForNameChange = (controller: AbortController): (() => void) => {
+    const off = pi.on("session_info_changed", () => {
+      stopListening();
+      controller.abort();
+    });
+    const stopListening = () => {
+      off();
+      if (activeListener === stopListening) activeListener = undefined;
+    };
+    activeListener = stopListening;
+    return stopListening;
+  };
+
+  // /new or /fork starts a fresh session; detach the previous request's listener.
   pi.on("session_start", (event) => {
     if (event.reason !== "new" && event.reason !== "fork") return;
 
-    startPrompt = undefined;
+    activeListener?.();
     isSessionNamed = false;
   });
 
-  // Excludes any skill invocation at session start
-  pi.on("before_agent_start", (event) => {
-    if (!startPrompt) {
-      startPrompt = event.prompt;
-    }
-  });
-
-  pi.on("agent_end", (_event, ctx) => {
+  pi.on("before_agent_start", (event, ctx) => {
+    // pi <1.2.0 has no messageType (all runs are user prompts there); treat a
+    // missing field as "user" so naming still fires on older hosts.
+    if ("messageType" in event && event.messageType !== "user") return;
+    if (!event.prompt) return;
     if (ctx.mode !== "tui") return;
-    if (!startPrompt) return;
     if (isSessionNamed) return;
     if (pi.getSessionName()) return;
-    // --no-session runs use an in-memory session: no file until the first
-    // persisted write, which only persisted sessions ever perform
-    if (ctx.sessionManager.getSessionFile() === undefined) return;
+    if (ctx.sessionManager.getSessionFile() === undefined) return; // --no-session
 
-    isSessionNamed = true;
-
-    // The session outlives the turn, so run naming in the background
-    // without delaying the user's prompt. The call never rejects (it catches
-    // internally). Edge: quitting or switching sessions within the ~1-2s
-    // naming window loses the name (warned, cosmetic).
-    void generateSessionName(pi, ctx, startPrompt);
+    isSessionNamed = true; // optimistic: one attempt per fresh session
+    setTimeout(
+      () =>
+        void generateSessionName(pi, ctx, event.prompt, listenForNameChange),
+      0,
+    );
   });
 }

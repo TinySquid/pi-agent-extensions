@@ -6,7 +6,7 @@ Custom [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
 
 | Extension                                 | Description                                                         |
 | ----------------------------------------- | ------------------------------------------------------------------- |
-| [auto-session-name](./auto-session-name/) | Auto-generates descriptive session names after the first turn       |
+| [auto-session-name](./auto-session-name/) | Auto-generates session names at the first eligible user run         |
 | [memory](./memory/) - **deprecated**      | Persistent project memory across sessions (MEMORY.md + `/remember`) |
 | [opencode-go-usage](./opencode-go-usage/) | OpenCode Go plan usage in the footer + `/opencode-go` usage table   |
 
